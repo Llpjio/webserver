@@ -100,6 +100,34 @@
         </div>
       </section>
 
+      <!-- Aternos-style World Backups Hub -->
+      <section class="card mc-net-history" style="margin-bottom: 1.5rem;">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
+          <div class="card-header-left">
+            <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Backups" />
+            <div>
+              <h2 class="card-title mc-pixel-font">World Backups (Aternos Cloud)</h2>
+              <span style="font-size: 0.8rem; color: #93c5fd; display: block; margin-top: 2px;">
+                📁 Google Drive 5TB Storage Connected · Restore any milestone save anytime
+              </span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn btn-primary btn-sm" onclick="openCreateBackupModal()">
+              ➕ Create Backup
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="fetchBackups()">
+              🔄 Refresh
+            </button>
+          </div>
+        </div>
+
+        <div id="backupsList" class="backups-list-container">
+          <!-- Populated by JS -->
+          <div style="text-align: center; padding: 1.5rem; color: #aaa;">Loading backups...</div>
+        </div>
+      </section>
+
       <!-- Registered Players Roster & World Version History -->
       <div class="dashboard-secondary-grid">
         <!-- Players Roster -->
@@ -212,6 +240,76 @@
           <button type="button" class="btn btn-secondary" onclick="openLoginModal()">Already have an account? Sign In</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Create Backup Modal (Aternos Style) -->
+  <div class="modal-overlay hidden" id="createBackupModal">
+    <div class="modal-card mc-panel-modal" style="max-width: 550px;">
+      <div class="modal-header">
+        <h3 class="modal-title mc-pixel-font">📦 Create World Backup</h3>
+        <button class="modal-close-btn" onclick="closeBackupModals()">✕</button>
+      </div>
+      <form id="createBackupForm" onsubmit="handleCreateBackupSubmit(event)">
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="backupTitleInput">Backup Name / Title:</label>
+          <input type="text" id="backupTitleInput" class="form-input" placeholder="e.g. Pre-Ender Dragon fight, Base Expansion" required />
+        </div>
+
+        <div class="form-group mc-inset-box" style="margin-bottom: 1rem; border: 2px solid rgba(59, 130, 246, 0.4);">
+          <label class="form-label mc-pixel-font" for="backupGdriveInput" style="color: #60a5fa;">
+            📁 Google Drive Link (5TB Storage):
+          </label>
+          <input type="url" id="backupGdriveInput" class="form-input" placeholder="e.g. https://drive.google.com/file/d/.../view" />
+          <small style="color: #93c5fd; margin-top: 4px; display: block;">
+            Upload your zipped world to Google Drive &rarr; Share (Anyone with link) &rarr; Paste link.
+          </small>
+        </div>
+
+        <div class="form-group mc-inset-box" style="margin-bottom: 1rem;">
+          <label class="form-label mc-pixel-font" for="backupFileInput">
+            📂 Or Direct File Upload (.zip):
+          </label>
+          <input type="file" id="backupFileInput" class="form-input" accept=".zip" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="backupNotesInput">Changelog / Notes:</label>
+          <input type="text" id="backupNotesInput" class="form-input" placeholder="e.g. Built automated sorter, enchanting room..." />
+        </div>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary" id="createBackupSubmitBtn">
+            <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" />
+            Create Backup
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="closeBackupModals()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Restore Backup Modal -->
+  <div class="modal-overlay hidden" id="restoreBackupModal">
+    <div class="modal-card mc-panel-modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title mc-pixel-font" style="color: var(--mc-yellow);">⚠️ Restore World Backup</h3>
+        <button class="modal-close-btn" onclick="closeBackupModals()">✕</button>
+      </div>
+      <div style="padding: 1rem 0;">
+        <p style="font-size: 0.95rem; margin-bottom: 1rem;">
+          Are you sure you want to restore <strong id="restoreModalTargetTitle" style="color: #60a5fa;">Backup v100</strong> as the active world?
+        </p>
+        <p style="color: #aaaaaa; font-size: 0.85rem; line-height: 1.4;">
+          This will set this backup save as the authoritative baseline for all future hosting sessions.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-success" id="confirmRestoreBtn" onclick="confirmExecuteRestore()">
+          🔄 Yes, Restore this Backup
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="closeBackupModals()">Cancel</button>
+      </div>
     </div>
   </div>
 

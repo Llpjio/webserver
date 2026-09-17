@@ -796,10 +796,97 @@ body.theme-classic .mc-animated-canvas {
   color: var(--mc-green);
 }
 
-.history-player {
+/* ================= ATERNOS-STYLE BACKUP CARDS ================= */
+.backups-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.backup-card {
+  background: rgba(14, 11, 22, 0.85);
+  border: 2px solid #332b47;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.backup-card:hover {
+  border-color: #4f436c;
+  background: rgba(19, 15, 30, 0.95);
+}
+
+.backup-card.active-backup {
+  border-color: var(--mc-green);
+  background: rgba(34, 197, 94, 0.08);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.15);
+}
+
+.backup-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 250px;
+}
+
+.backup-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.backup-title-text {
   font-family: var(--font-pixel);
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   color: #ffffff;
+}
+
+.backup-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.88rem;
+  color: #9ca3af;
+  flex-wrap: wrap;
+}
+
+.backup-notes-text {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.backup-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge-active-baseline {
+  background: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+  border: 1px solid #22c55e;
+}
+
+.badge-gdrive {
+  background: rgba(37, 99, 235, 0.3);
+  color: #93c5fd;
+  border: 1px solid #3b82f6;
+}
+
+.badge-locked {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fde047;
+  border: 1px solid #eab308;
 }
 
 /* ================= AUTH MODALS ================= */

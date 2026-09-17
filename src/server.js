@@ -12,6 +12,7 @@ const authRouter = require('./routes/auth');
 const sessionRouter = require('./routes/session');
 const worldRouter = require('./routes/world');
 const playersRouter = require('./routes/players');
+const backupsRouter = require('./routes/backups');
 
 const app = express();
 const server = http.createServer(app);
@@ -35,6 +36,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/world', worldRouter);
 app.use('/api/players', playersRouter);
+app.use('/api/backups', backupsRouter);
 
 // Fallback to SPA
 app.use((req, res) => {

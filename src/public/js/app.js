@@ -10,6 +10,8 @@ const STATE = {
   currentStatus: null,
   players: [],
   history: [],
+  backups: [],
+  targetRestoreVersion: null,
   timerInterval: null,
   heartbeatInterval: null,
   ws: null
@@ -225,6 +227,7 @@ function setupWebSocket() {
         } else if (msg.type === 'WORLD_VERSION_UPDATED') {
           showToast(`Authoritative World updated to v${msg.payload.version}!`, 'success');
           fetchHistory();
+          fetchBackups();
           fetchStatus();
         }
       } catch (err) {
@@ -250,7 +253,7 @@ function setupWebSocket() {
 
 // ================= DATA FETCHING =================
 async function refreshAll() {
-  await Promise.all([fetchPlayers(), fetchStatus(), fetchHistory()]);
+  await Promise.all([fetchPlayers(), fetchStatus(), fetchHistory(), fetchBackups()]);
 }
 
 async function fetchPlayers() {
@@ -287,6 +290,17 @@ async function fetchHistory() {
     renderHistory();
   } catch (err) {
     console.error('Error fetching history:', err);
+  }
+}
+
+async function fetchBackups() {
+  try {
+    const res = await fetch('/api/backups');
+    const data = await res.json();
+    STATE.backups = data.backups || [];
+    renderBackups();
+  } catch (err) {
+    console.error('Error fetching backups:', err);
   }
 }
 
@@ -727,6 +741,264 @@ function renderHistory() {
       </tr>
     `;
   }).join('');
+}
+
+function renderBackups() {
+  const container = document.getElementById('backupsList');
+  if (!container) return;
+
+  if (STATE.backups.length === 0) {
+    container.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: #aaa;">No world backups found. Click "Create Backup" to save your first snapshot.</div>';
+    return;
+  }
+
+  container.innerHTML = STATE.backups.map(b => {
+    const dateStr = b.createdAt ? new Date(b.createdAt).toLocaleString() : 'N/A';
+    const isActive = b.isActive;
+    const isLocked = b.isLocked;
+
+    let storageTag = '';
+    if (b.storageType === 'gdrive') {
+      storageTag = `<span class="badge badge-gdrive">📁 Google Drive</span>`;
+    } else if (b.storageType === 'r2') {
+      storageTag = `<span class="badge" style="background: rgba(234, 88, 12, 0.3); color: #fdba74; border: 1px solid #ea580c;">☁️ Cloudflare R2</span>`;
+    } else if (b.storageType === 'local') {
+      storageTag = `<span class="badge" style="background: rgba(75, 85, 99, 0.3); color: #d1d5db; border: 1px solid #6b7280;">💾 Local Storage</span>`;
+    }
+
+    return `
+      <div class="backup-card ${isActive ? 'active-backup' : ''}">
+        <div class="backup-card-info">
+          <div class="backup-title-row">
+            <span class="backup-title-text mc-pixel-font">${escapeHtml(b.title)}</span>
+            <span class="history-ver" style="font-size: 1.1rem;">(v${b.version})</span>
+            ${isActive ? `<span class="badge badge-active-baseline">👑 Active Baseline</span>` : ''}
+            ${storageTag}
+            ${isLocked ? `<span class="badge badge-locked">🔒 Pinned</span>` : ''}
+          </div>
+          <div class="backup-meta-row">
+            <span>👤 ${escapeHtml(b.createdBy)}</span>
+            <span>🕒 ${dateStr}</span>
+            ${b.fileSize ? `<span>📦 ${(b.fileSize / (1024 * 1024)).toFixed(1)} MB</span>` : ''}
+          </div>
+          ${b.notes ? `<div class="backup-notes-text">"${escapeHtml(b.notes)}"</div>` : ''}
+        </div>
+
+        <div class="backup-card-actions">
+          ${!isActive ? `
+            <button class="btn btn-success btn-sm" onclick="promptRestoreBackup(${b.version}, '${escapeHtml(b.title)}')">
+              🔄 Restore
+            </button>
+          ` : `
+            <button class="btn btn-primary btn-sm" disabled title="Currently authoritative world baseline">
+              ✅ Active
+            </button>
+          `}
+
+          ${b.downloadUrl ? `
+            <a href="${b.downloadUrl}" class="btn btn-secondary btn-sm" download title="Download backup .zip archive">
+              📥 Download
+            </a>
+          ` : `
+            <a href="/api/world/download/${b.version}" class="btn btn-secondary btn-sm" download title="Download backup archive">
+              📥 Download
+            </a>
+          `}
+
+          <button class="btn btn-secondary btn-sm" onclick="handleToggleLockBackup(${b.version})" title="${isLocked ? 'Unlock / Unpin' : 'Lock / Pin'}">
+            ${isLocked ? '🔓' : '🔒'}
+          </button>
+
+          ${!isActive && !isLocked ? `
+            <button class="btn btn-danger btn-sm" onclick="handleDeleteBackup(${b.version})" title="Delete backup">
+              🗑️
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ================= BACKUP MODALS & HANDLERS =================
+function openCreateBackupModal() {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+  const modal = document.getElementById('createBackupModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeBackupModals() {
+  const m1 = document.getElementById('createBackupModal');
+  const m2 = document.getElementById('restoreBackupModal');
+  if (m1) m1.classList.add('hidden');
+  if (m2) m2.classList.add('hidden');
+}
+
+async function handleCreateBackupSubmit(event) {
+  event.preventDefault();
+  if (!STATE.token) return;
+
+  const titleInput = document.getElementById('backupTitleInput');
+  const gdriveInput = document.getElementById('backupGdriveInput');
+  const fileInput = document.getElementById('backupFileInput');
+  const notesInput = document.getElementById('backupNotesInput');
+  const btn = document.getElementById('createBackupSubmitBtn');
+
+  const title = titleInput ? titleInput.value.trim() : '';
+  const gdriveUrl = gdriveInput ? gdriveInput.value.trim() : '';
+  const notes = notesInput ? notesInput.value.trim() : '';
+  const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+  const formData = new FormData();
+  formData.append('title', title);
+  formData.append('notes', notes);
+  if (gdriveUrl) formData.append('gdriveUrl', gdriveUrl);
+  if (file) formData.append('worldFile', file);
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving Backup...';
+  }
+
+  try {
+    const res = await fetch('/api/backups/create', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${STATE.token}` },
+      body: formData
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to create backup', 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" /> Create Backup';
+      }
+      return;
+    }
+
+    showToast('Backup snapshot created successfully!', 'success');
+    closeBackupModals();
+    fetchBackups();
+    fetchHistory();
+    fetchStatus();
+  } catch (err) {
+    showToast('Network error creating backup', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" /> Create Backup';
+    }
+  }
+}
+
+function promptRestoreBackup(version, title) {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+  STATE.targetRestoreVersion = version;
+  const label = document.getElementById('restoreModalTargetTitle');
+  if (label) label.textContent = `${title} (v${version})`;
+  const modal = document.getElementById('restoreBackupModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+async function confirmExecuteRestore() {
+  if (!STATE.token || !STATE.targetRestoreVersion) return;
+  const version = STATE.targetRestoreVersion;
+  const btn = document.getElementById('confirmRestoreBtn');
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Restoring Backup...';
+  }
+
+  try {
+    const res = await fetch(`/api/backups/${version}/restore`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      }
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to restore backup', 'error');
+      return;
+    }
+
+    showToast(data.message || `Restored backup as active world v${data.newVersion}!`, 'success');
+    closeBackupModals();
+    fetchBackups();
+    fetchHistory();
+    fetchStatus();
+  } catch (err) {
+    showToast('Network error restoring backup', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 Yes, Restore this Backup';
+    }
+  }
+}
+
+async function handleToggleLockBackup(version) {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/backups/${version}/lock`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      }
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.isLocked ? `Backup v${version} pinned/locked.` : `Backup v${version} unlocked.`, 'info');
+      fetchBackups();
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+  }
+}
+
+async function handleDeleteBackup(version) {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+  if (!confirm(`Are you sure you want to delete backup v${version}?`)) return;
+
+  try {
+    const res = await fetch(`/api/backups/${version}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${STATE.token}`
+      }
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to delete backup', 'error');
+      return;
+    }
+
+    showToast(`Backup v${version} deleted.`, 'info');
+    fetchBackups();
+    fetchHistory();
+  } catch (err) {
+    showToast('Connection error', 'error');
+  }
 }
 
 // ================= ACTIONS & API HANDLERS =================

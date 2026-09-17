@@ -9,6 +9,7 @@ const authRouter = require('../src/routes/auth');
 const sessionRouter = require('../src/routes/session');
 const worldRouter = require('../src/routes/world');
 const playersRouter = require('../src/routes/players');
+const backupsRouter = require('../src/routes/backups');
 
 async function makeRequest(server, path, method = 'GET', body = null, token = null) {
   const port = server.address().port;
@@ -55,6 +56,7 @@ async function runMongoDBTests() {
   app.use('/api/session', sessionRouter);
   app.use('/api/world', worldRouter);
   app.use('/api/players', playersRouter);
+  app.use('/api/backups', backupsRouter);
 
   await db.init();
   await Session.deleteMany({}); // Clean sessions
@@ -156,9 +158,36 @@ async function runMongoDBTests() {
     const latestVerRes = await makeRequest(server, '/api/world/latest', 'GET');
     assert.strictEqual(latestVerRes.data.worldVersion.version, 102);
     assert.strictEqual(latestVerRes.data.worldVersion.storageType, 'gdrive');
-    console.log('  ✅ Google Drive link extracted and linked to v102 download');
+    // 10. Aternos-style Backups: Create, Lock, and Restore
+    console.log('▶ Test 10: Aternos-style Backups (Create, Lock, Restore)');
+    const createBackupRes = await makeRequest(server, '/api/backups/create', 'POST', {
+      title: 'Pre-Ender Dragon Expedition Snapshot',
+      notes: 'Everyone geared up with Netherite armor',
+      gdriveUrl: 'https://drive.google.com/file/d/DRAGON_PREP_BACKUP_123/view'
+    }, p2Token);
+    assert.strictEqual(createBackupRes.status, 201);
+    assert.strictEqual(createBackupRes.data.success, true);
+    const createdVer = createBackupRes.data.backup.version;
+    assert.strictEqual(createdVer, 103);
 
-    console.log('\n🎉 ALL MONGODB, GDRIVE & AUTH INTEGRATION TESTS PASSED!\n');
+    // Lock backup
+    const lockRes = await makeRequest(server, `/api/backups/${createdVer}/lock`, 'POST', {}, p2Token);
+    assert.strictEqual(lockRes.status, 200);
+    assert.strictEqual(lockRes.data.isLocked, true);
+
+    // List backups
+    const listRes = await makeRequest(server, '/api/backups', 'GET');
+    assert.strictEqual(listRes.status, 200);
+    assert.strictEqual(listRes.data.activeVersion, 103);
+    assert(listRes.data.backups.length >= 4);
+
+    // Restore older backup v100
+    const restoreRes = await makeRequest(server, '/api/backups/100/restore', 'POST', {}, p2Token);
+    assert.strictEqual(restoreRes.status, 200);
+    assert.strictEqual(restoreRes.data.newVersion, 104);
+    console.log('  ✅ Aternos backup created (v103), pinned, and v100 restored as active v104');
+
+    console.log('\n🎉 ALL MONGODB, GDRIVE, ATERNOS BACKUPS & AUTH TESTS PASSED!\n');
     process.exit(0);
   } finally {
     server.close();

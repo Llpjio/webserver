@@ -44,10 +44,11 @@ const sessionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// World Version History Schema
+// World Version & Backup History Schema (Aternos style)
 const worldVersionSchema = new mongoose.Schema({
   version: { type: Number, required: true, unique: true },
   parentVersion: { type: Number, default: null },
+  title: { type: String, default: '' },
   createdByUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   createdByUsername: { type: String, default: 'System' },
   sessionId: { type: String, default: null },
@@ -56,6 +57,8 @@ const worldVersionSchema = new mongoose.Schema({
   fileName: { type: String, default: null },
   fileSize: { type: Number, default: 0 },
   storageType: { type: String, enum: ['gdrive', 'r2', 'local', 'none'], default: 'none' },
+  isLocked: { type: Boolean, default: false },
+  isAuthoritative: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 
