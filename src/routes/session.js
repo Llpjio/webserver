@@ -121,4 +121,30 @@ router.post('/release', authenticateToken, async (req, res, next) => {
   }
 });
 
+// GET /api/session/history (Public - MongoDB session history)
+router.get('/history', async (req, res, next) => {
+  try {
+    const { Session } = require('../db/models');
+    const sessions = await Session.find().sort({ createdAt: -1 }).limit(30);
+    res.json({
+      sessions: sessions.map(s => ({
+        id: s.sessionId,
+        hostUsername: s.hostUsername,
+        hostDisplayName: s.hostDisplayName,
+        hostColor: s.hostColor,
+        status: s.status,
+        e4mcAddress: s.e4mcAddress,
+        worldVersionStart: s.worldVersionStart,
+        worldVersionEnd: s.worldVersionEnd,
+        sessionStartedAt: s.sessionStartedAt,
+        sessionEndedAt: s.sessionEndedAt,
+        notes: s.notes,
+        createdAt: s.createdAt
+      }))
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
