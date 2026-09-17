@@ -587,18 +587,36 @@ function renderSavingState(session, isHost, user) {
         <div class="host-badge-banner">🛑 Session Ending</div>
         <h2 class="hero-title mc-pixel-font" style="color: var(--mc-purple);">Step 3: Save World & Upload (v${nextVer})</h2>
         <p class="hero-desc">
-          Please close Minecraft cleanly. Then zip your world save folder (<code>.minecraft/saves/E4ALL</code>) and upload it to publish <strong>v${nextVer}</strong>.
+          Close Minecraft cleanly. Then zip your world save folder (<code>.minecraft/saves/E4ALL</code>) and link or upload it to publish <strong>v${nextVer}</strong>.
         </p>
 
         <!-- World Upload Form -->
-        <form id="worldUploadForm" onsubmit="handleFinalizeUploadSubmit(event)" style="max-width: 600px; margin: 1.25rem auto;">
-          <div class="form-group mc-inset-box" style="text-align: left;">
+        <form id="worldUploadForm" onsubmit="handleFinalizeUploadSubmit(event)" style="max-width: 650px; margin: 1.25rem auto;">
+          <!-- Option 1: Google Drive Link -->
+          <div class="form-group mc-inset-box" style="text-align: left; margin-bottom: 1rem; border: 2px solid rgba(59, 130, 246, 0.5);">
+            <label class="form-label mc-pixel-font" for="worldGdriveUrl" style="color: #60a5fa;">
+              📁 Option 1: Google Drive Share Link (Recommended for 5TB Storage):
+            </label>
+            <input 
+              type="url" 
+              id="worldGdriveUrl" 
+              class="input-field" 
+              placeholder="e.g. https://drive.google.com/file/d/1A2B3C.../view?usp=sharing" 
+              style="width: 100%; margin-top: 6px;"
+            />
+            <small style="color: #93c5fd; margin-top: 4px; display: block;">
+              💡 Upload <code>world_v${nextVer}.zip</code> to your Google Drive &rarr; Set share to <em>"Anyone with link can view"</em> &rarr; Paste link here.
+            </small>
+          </div>
+
+          <!-- Option 2: Direct Zip Upload -->
+          <div class="form-group mc-inset-box" style="text-align: left; margin-bottom: 1rem;">
             <label class="form-label mc-pixel-font" for="worldZipFile">
-              📂 Select World Save Archive (.zip):
+              📂 Option 2: Direct Upload (.zip):
             </label>
             <input type="file" id="worldZipFile" class="form-input" accept=".zip" />
             <small style="color: #aaaaaa; margin-top: 4px; display: block;">
-              (Optional: Leave empty if no file changes were made to publish version bump only)
+              (Or choose file to upload directly if not using Google Drive)
             </small>
           </div>
 
@@ -612,10 +630,10 @@ function renderSavingState(session, isHost, user) {
             />
           </div>
 
-          <div class="btn-actions-row">
+          <div class="btn-actions-row" style="margin-top: 1rem;">
             <button type="submit" class="btn btn-primary" id="uploadPublishBtn">
               <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" />
-              📤 Upload & Publish World v${nextVer}
+              📤 Publish World v${nextVer}
             </button>
           </div>
         </form>
@@ -685,12 +703,27 @@ function renderHistory() {
 
   tbody.innerHTML = STATE.history.map(item => {
     const dateStr = item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A';
+    let storageBadge = '';
+    if (item.storageType === 'gdrive') {
+      storageBadge = `<span class="badge" style="background: #2563eb; color: #fff; margin-left: 6px; font-size: 0.75rem;">📁 GDrive</span>`;
+    } else if (item.storageType === 'r2') {
+      storageBadge = `<span class="badge" style="background: #ea580c; color: #fff; margin-left: 6px; font-size: 0.75rem;">☁️ R2</span>`;
+    }
+
     return `
       <tr>
-        <td class="history-ver">v${item.version}</td>
+        <td class="history-ver">
+          v${item.version}
+          ${storageBadge}
+        </td>
         <td class="history-player">${escapeHtml(item.player_name || 'System')}</td>
         <td>${escapeHtml(item.notes || 'Routine session')}</td>
-        <td>${dateStr}</td>
+        <td>
+          ${dateStr}
+          <a href="/api/world/download/${item.version}" class="btn btn-secondary btn-sm" style="margin-left: 8px; padding: 2px 8px; font-size: 0.8rem;" download title="Download this version">
+            📥 Save
+          </a>
+        </td>
       </tr>
     `;
   }).join('');
@@ -876,21 +909,26 @@ async function handleFinalizeUploadSubmit(event) {
   }
 
   const fileInput = document.getElementById('worldZipFile');
+  const gdriveInput = document.getElementById('worldGdriveUrl');
   const notesInput = document.getElementById('sessionNotesInput');
   const btn = document.getElementById('uploadPublishBtn');
 
   const notes = notesInput ? notesInput.value.trim() : '';
+  const gdriveUrl = gdriveInput ? gdriveInput.value.trim() : '';
   const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
 
   const formData = new FormData();
   formData.append('notes', notes);
+  if (gdriveUrl) {
+    formData.append('gdriveUrl', gdriveUrl);
+  }
   if (file) {
     formData.append('worldFile', file);
   }
 
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" /> Uploading & Publishing...`;
+    btn.innerHTML = `<img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" /> Publishing World...`;
   }
 
   try {

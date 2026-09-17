@@ -55,7 +55,7 @@ const worldVersionSchema = new mongoose.Schema({
   fileUrl: { type: String, default: null },
   fileName: { type: String, default: null },
   fileSize: { type: Number, default: 0 },
-  storageType: { type: String, enum: ['r2', 'local', 'none'], default: 'none' },
+  storageType: { type: String, enum: ['gdrive', 'r2', 'local', 'none'], default: 'none' },
   createdAt: { type: Date, default: Date.now }
 });
 

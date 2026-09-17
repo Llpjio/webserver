@@ -34,6 +34,54 @@ if (isR2Configured()) {
 }
 
 /**
+ * Parse a Google Drive share link and return direct download and view URLs
+ */
+function parseGoogleDriveUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+
+  const trimmed = rawUrl.trim();
+  let fileId = null;
+
+  // Patterns: /file/d/FILE_ID/..., id=FILE_ID, /open?id=FILE_ID
+  const matchFileD = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFileD) {
+    fileId = matchFileD[1];
+  } else {
+    const matchIdParam = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchIdParam) {
+      fileId = matchIdParam[1];
+    }
+  }
+
+  if (!fileId) return null;
+
+  return {
+    fileId,
+    // Google Drive direct download URL format
+    downloadUrl: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+    fallbackDownloadUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,
+    viewUrl: `https://drive.google.com/file/d/${fileId}/view`
+  };
+}
+
+/**
+ * Process a Google Drive link provided by host for a world version
+ */
+function processGoogleDriveLink(version, rawUrl, notes) {
+  const parsed = parseGoogleDriveUrl(rawUrl);
+  if (!parsed) {
+    throw new Error('Invalid Google Drive link. Please provide a valid share link from Google Drive (e.g., https://drive.google.com/file/d/xxx/view).');
+  }
+
+  return {
+    fileName: `world_v${version}.zip`,
+    fileSize: 0,
+    fileUrl: parsed.downloadUrl,
+    storageType: 'gdrive'
+  };
+}
+
+/**
  * Upload a world archive (to R2 if configured, otherwise locally)
  */
 async function uploadWorldFile(version, fileBuffer, originalName, mimeType) {
@@ -83,6 +131,10 @@ async function uploadWorldFile(version, fileBuffer, originalName, mimeType) {
 async function getDownloadUrl(version, worldDoc) {
   if (!worldDoc) return null;
 
+  if (worldDoc.storageType === 'gdrive' && worldDoc.fileUrl) {
+    return worldDoc.fileUrl;
+  }
+
   if (worldDoc.storageType === 'r2' && isR2Configured() && s3Client) {
     if (R2_PUBLIC_DOMAIN) {
       return `${R2_PUBLIC_DOMAIN.replace(/\/$/, '')}/worlds/${worldDoc.fileName || `world_v${version}.zip`}`;
@@ -116,6 +168,8 @@ function getLocalFilePath(version, fileName) {
 
 module.exports = {
   isR2Configured,
+  parseGoogleDriveUrl,
+  processGoogleDriveLink,
   uploadWorldFile,
   getDownloadUrl,
   getLocalFilePath

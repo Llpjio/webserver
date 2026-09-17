@@ -139,7 +139,26 @@ async function runMongoDBTests() {
     assert.strictEqual(finRes.data.status.status, 'OFFLINE');
     console.log('  ✅ World version incremented to v101 and returned to OFFLINE');
 
-    console.log('\n🎉 ALL MONGODB & AUTH INTEGRATION TESTS PASSED!\n');
+    // 9. Host claiming v101 and publishing v102 with Google Drive link
+    console.log('▶ Test 9: Host session with Google Drive link publishing');
+    await makeRequest(server, '/api/session/claim', 'POST', {}, p2Token);
+    await makeRequest(server, '/api/session/ready', 'POST', {}, p2Token);
+    await makeRequest(server, '/api/session/online', 'POST', { e4mcAddress: 'gdrive-test.e4mc.link' }, p2Token);
+    await makeRequest(server, '/api/session/end', 'POST', {}, p2Token);
+
+    const gdriveUploadRes = await makeRequest(server, '/api/world/upload', 'POST', {
+      notes: 'Transferred 500MB world save to Google Drive',
+      gdriveUrl: 'https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view?usp=sharing'
+    }, p2Token);
+    assert.strictEqual(gdriveUploadRes.status, 200);
+    assert.strictEqual(gdriveUploadRes.data.newWorldVersion, 102);
+
+    const latestVerRes = await makeRequest(server, '/api/world/latest', 'GET');
+    assert.strictEqual(latestVerRes.data.worldVersion.version, 102);
+    assert.strictEqual(latestVerRes.data.worldVersion.storageType, 'gdrive');
+    console.log('  ✅ Google Drive link extracted and linked to v102 download');
+
+    console.log('\n🎉 ALL MONGODB, GDRIVE & AUTH INTEGRATION TESTS PASSED!\n');
     process.exit(0);
   } finally {
     server.close();

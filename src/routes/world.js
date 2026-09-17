@@ -66,6 +66,10 @@ router.get('/download/:version', async (req, res, next) => {
       return res.status(404).send('World version not found');
     }
 
+    if (doc.storageType === 'gdrive' && doc.fileUrl) {
+      return res.redirect(doc.fileUrl);
+    }
+
     if (doc.storageType === 'r2' && storageService.isR2Configured()) {
       const directUrl = await storageService.getDownloadUrl(versionNum, doc);
       return res.redirect(directUrl);
@@ -83,10 +87,10 @@ router.get('/download/:version', async (req, res, next) => {
   }
 });
 
-// POST /api/world/upload (Host uploads new world version & ends session)
+// POST /api/world/upload (Host uploads new world version or links Google Drive & ends session)
 router.post('/upload', authenticateToken, upload.single('worldFile'), async (req, res, next) => {
   try {
-    const { notes } = req.body;
+    const { notes, gdriveUrl } = req.body;
     let fileInfo = null;
 
     // Get current version to calculate next version
@@ -94,7 +98,9 @@ router.post('/upload', authenticateToken, upload.single('worldFile'), async (req
     const currentVer = latestVer ? latestVer.version : 100;
     const nextVer = currentVer + 1;
 
-    if (req.file) {
+    if (gdriveUrl && gdriveUrl.trim()) {
+      fileInfo = storageService.processGoogleDriveLink(nextVer, gdriveUrl.trim());
+    } else if (req.file) {
       fileInfo = await storageService.uploadWorldFile(
         nextVer,
         req.file.buffer,
