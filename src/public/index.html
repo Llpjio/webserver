@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E4ALL — Minecraft World Host Coordinator</title>
+  <link rel="icon" href="/assets/textures/diamond_pickaxe.png">
+  
+  <!-- Minecraft Web Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="theme-mcnet">
+  <!-- Animated Background Canvas Container -->
+  <div class="mc-panorama-bg" id="mcPanoramaBg"></div>
+
+  <!-- Top Grass/Dirt Block decorative header strip -->
+  <div class="mc-grass-header-strip">
+    <div class="mc-grass-top"></div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header mc-net-header">
+      <div class="header-brand">
+        <div class="logo-box-stepped">
+          <img src="/assets/textures/diamond_pickaxe.png" alt="Pickaxe" class="mc-pixel-icon logo-icon" />
+        </div>
+        <div>
+          <h1 class="logo-title mc-pixel-font">E4ALL</h1>
+          <p class="logo-sub mc-pixel-font">Minecraft World Host Coordinator</p>
+        </div>
+      </div>
+
+      <div class="header-status-group">
+        <!-- World Version -->
+        <div class="header-pill world-pill mc-net-pill" id="worldVersionPill">
+          <img src="/assets/textures/compass_16.png" class="mc-tiny-icon" alt="Compass" />
+          <span class="pill-label">World</span>
+          <span class="pill-val" id="headerWorldVersion">v100</span>
+        </div>
+
+        <!-- WebSocket Sync -->
+        <div class="header-pill ws-pill mc-net-pill" id="wsStatusPill">
+          <span class="ws-dot" id="wsDot"></span>
+          <span id="wsText">Connecting...</span>
+        </div>
+
+        <!-- Theme Switcher -->
+        <div class="theme-selector mc-net-pill">
+          <label for="themeSelect" class="identity-label">Theme:</label>
+          <select id="themeSelect" class="identity-dropdown">
+            <option value="mcnet">🌟 Minecraft.net (Animated)</option>
+            <option value="classic">⛏️ Classic Textures</option>
+          </select>
+        </div>
+
+        <!-- Player Identity Switcher -->
+        <div class="identity-selector mc-net-pill">
+          <label for="playerSelect" class="identity-label">Player:</label>
+          <select id="playerSelect" class="identity-dropdown">
+            <option value="1">Player 1 (Host)</option>
+            <option value="2">Player 2 (Host)</option>
+            <option value="3">Player 3 (Host)</option>
+            <option value="4">Player 4 (Client Only)</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <!-- Notification Toast Area -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Main Live Coordination Stage -->
+    <main class="main-content">
+      <!-- Status Hero Banner -->
+      <section class="card status-hero mc-net-hero" id="statusHeroCard">
+        <!-- Hero Header -->
+        <div class="hero-header">
+          <div class="status-indicator">
+            <span class="status-pulse" id="statusPulse"></span>
+            <span class="status-text mc-pixel-font" id="statusText">LOADING...</span>
+          </div>
+          <div class="timer-badge mc-net-tag hidden" id="sessionTimerBadge">
+            <img src="/assets/textures/clock_00.png" class="mc-tiny-icon" alt="Clock" />
+            <span id="sessionTimerText" class="mc-pixel-font">00:00:00</span>
+          </div>
+        </div>
+
+        <!-- Hero Body (State Machine Output) -->
+        <div class="hero-body" id="heroBody">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- 3-Column Minecraft.net Cards (About-Minecraft Theme Layout) -->
+      <div class="mcnet-cards-grid">
+        
+        <!-- Card 1: Overworld / Host Coordinator -->
+        <article class="mcnet-card card-overworld">
+          <div class="mcnet-card-media-stepped media-overworld">
+            <div class="stepped-illustration">
+              <img src="/assets/textures/grass_block_top.png" class="stepped-block b1" alt="Block" />
+              <img src="/assets/textures/crafting_table_top.png" class="stepped-block b2" alt="Block" />
+              <img src="/assets/textures/oak_log_top.png" class="stepped-block b3" alt="Block" />
+            </div>
+          </div>
+          <div class="mcnet-card-body">
+            <div class="mcnet-card-tags">
+              <span class="mcnet-tag-badge tag-public">JAVA EDITION</span>
+              <span class="mcnet-tag-badge tag-outline">LOCKING 🔒</span>
+            </div>
+            <h3 class="mcnet-card-title mc-pixel-font">Host Lease</h3>
+            <p class="mcnet-card-desc">
+              Atomic coordinator ensures only one player hosts the session at a time via e4mc.
+            </p>
+            
+            <div class="mcnet-feature-list">
+              <div class="mcnet-feature-item">
+                <span class="mcnet-dot dot-green"></span>
+                <strong>Atomic Claiming:</strong> Zero concurrency collisions.
+              </div>
+              <div class="mcnet-feature-item">
+                <span class="mcnet-dot dot-green"></span>
+                <strong>Live Heartbeats:</strong> 15s keepalive & stale auto-recovery.
+              </div>
+              <div class="mcnet-feature-item">
+                <span class="mcnet-dot dot-green"></span>
+                <strong>Version Bump:</strong> Monotonic save increments (v100+).
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Nether / Neo Voxy Architecture -->
+        <article class="mcnet-card card-nether">
+          <div class="mcnet-card-media-stepped media-nether">
+            <div class="stepped-illustration">
+              <img src="/assets/textures/obsidian.png" class="stepped-block b1" alt="Obsidian" />
+              <img src="/assets/textures/deepslate.png" class="stepped-block b2" alt="Deepslate" />
+              <img src="/assets/textures/amethyst_block.png" class="stepped-block b3" alt="Amethyst" />
+            </div>
+          </div>
+          <div class="mcnet-card-body">
+            <div class="mcnet-card-tags">
+              <span class="mcnet-tag-badge tag-nether">NEO VOXY</span>
+              <span class="mcnet-tag-badge tag-outline">LOCAL ONLY</span>
+            </div>
+            <h3 class="mcnet-card-title mc-pixel-font">LOD Caches</h3>
+            <p class="mcnet-card-desc">
+              Neo Voxy caches remain strictly local to PCs 1, 2, and 3 and are never uploaded.
+            </p>
+
+            <div class="mcnet-feature-list">
+              <div class="mcnet-feature-item">
+                <span class="mcnet-dot dot-purple"></span>
+                <strong>Client-Local:</strong> Divergent LOD caches are safe.
+              </div>
+              <div class="mcnet-feature-item">
+                <span class="mcnet-dot dot-purple"></span>
+                <strong>Authoritative Sync:</strong> Only save files sync.
+              </div>
+              <div class="mcnet-feature-item">
+                <span class="mcnet-dot dot-purple"></span>
+                <strong>Player 4 Compatible:</strong> Standard vanilla joins.
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Ocean / Party Roster -->
+        <article class="mcnet-card card-ocean">
+          <div class="mcnet-card-media-stepped media-ocean">
+            <div class="stepped-illustration">
+              <img src="/assets/textures/diamond_block.png" class="stepped-block b1" alt="Diamond" />
+              <img src="/assets/textures/emerald_block.png" class="stepped-block b2" alt="Emerald" />
+              <img src="/assets/textures/gold_block.png" class="stepped-block b3" alt="Gold" />
+            </div>
+          </div>
+          <div class="mcnet-card-body">
+            <div class="mcnet-card-tags">
+              <span class="mcnet-tag-badge tag-ocean">4 PLAYERS</span>
+              <span class="mcnet-tag-badge tag-outline">CO-OP ⛏️</span>
+            </div>
+            <h3 class="mcnet-card-title mc-pixel-font">Party Roster</h3>
+            <div class="roster-list" id="rosterList">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </article>
+
+      </div>
+
+      <!-- World Version History -->
+      <section class="card history-card mc-net-history">
+        <div class="card-header">
+          <div class="card-header-left">
+            <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Sign" />
+            <h2 class="card-title mc-pixel-font">World History Log</h2>
+          </div>
+          <span class="card-subtitle mc-pixel-font" id="historyCount">Loading...</span>
+        </div>
+        <div class="history-table-wrapper mc-net-table-box">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th class="mc-pixel-font">Version</th>
+                <th class="mc-pixel-font">Host</th>
+                <th class="mc-pixel-font">Notes</th>
+                <th class="mc-pixel-font">Date / Time</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer mc-net-footer">
+      <p class="mc-pixel-font">E4ALL Minecraft World Host Coordinator · Ready for Render Deployment</p>
+    </footer>
+  </div>
+
+  <script src="/js/mc_animated_bg.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
