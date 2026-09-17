@@ -58,8 +58,8 @@ router.post('/create', authenticateToken, upload.single('worldFile'), async (req
     let fileInfo = {
       fileName: `world_v${nextVer}.zip`,
       fileSize: 0,
-      fileUrl: null,
-      storageType: 'none'
+      fileUrl: storageService.GDRIVE_STORAGE_URL,
+      storageType: 'gdrive'
     };
 
     if (gdriveUrl && gdriveUrl.trim()) {

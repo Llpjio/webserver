@@ -10,6 +10,8 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'e4all-worlds';
 const R2_PUBLIC_DOMAIN = process.env.R2_PUBLIC_DOMAIN; // e.g. https://pub-xxx.r2.dev
 
+const GDRIVE_STORAGE_URL = process.env.GDRIVE_STORAGE_URL || 'https://drive.google.com/drive/folders/1SStfXqC6bhod_kHJ4bOnQ0Yx6UtrJ7H0?usp=sharing';
+
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -17,6 +19,10 @@ if (!fs.existsSync(uploadsDir)) {
 
 function isR2Configured() {
   return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+}
+
+function getGDriveStorageUrl() {
+  return GDRIVE_STORAGE_URL;
 }
 
 if (isR2Configured()) {
@@ -167,6 +173,8 @@ function getLocalFilePath(version, fileName) {
 }
 
 module.exports = {
+  GDRIVE_STORAGE_URL,
+  getGDriveStorageUrl,
   isR2Configured,
   parseGoogleDriveUrl,
   processGoogleDriveLink,

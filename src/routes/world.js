@@ -107,6 +107,13 @@ router.post('/upload', authenticateToken, upload.single('worldFile'), async (req
         req.file.originalname,
         req.file.mimetype
       );
+    } else {
+      fileInfo = {
+        fileName: `world_v${nextVer}.zip`,
+        fileSize: 0,
+        fileUrl: storageService.GDRIVE_STORAGE_URL,
+        storageType: 'gdrive'
+      };
     }
 
     // Finalize session with file info

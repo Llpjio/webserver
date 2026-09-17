@@ -112,7 +112,10 @@
               </span>
             </div>
           </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <a href="https://drive.google.com/drive/folders/1SStfXqC6bhod_kHJ4bOnQ0Yx6UtrJ7H0?usp=sharing" target="_blank" class="btn btn-secondary btn-sm" style="border-color: #3b82f6;" title="Open linked Google Drive folder">
+              📂 Open GDrive Folder ↗
+            </a>
             <button class="btn btn-primary btn-sm" onclick="openCreateBackupModal()">
               ➕ Create Backup
             </button>
@@ -256,21 +259,19 @@
           <input type="text" id="backupTitleInput" class="form-input" placeholder="e.g. Pre-Ender Dragon fight, Base Expansion" required />
         </div>
 
-        <div class="form-group mc-inset-box" style="margin-bottom: 1rem; border: 2px solid rgba(59, 130, 246, 0.4);">
-          <label class="form-label mc-pixel-font" for="backupGdriveInput" style="color: #60a5fa;">
-            📁 Google Drive Link (5TB Storage):
+        <div class="form-group mc-inset-box" style="margin-bottom: 1rem; border: 2px solid #2563eb; background: rgba(37, 99, 235, 0.12);">
+          <label class="form-label mc-pixel-font" style="color: #60a5fa;">
+            📁 Storage Destination:
           </label>
-          <input type="url" id="backupGdriveInput" class="form-input" placeholder="e.g. https://drive.google.com/file/d/.../view" />
-          <small style="color: #93c5fd; margin-top: 4px; display: block;">
-            Upload your zipped world to Google Drive &rarr; Share (Anyone with link) &rarr; Paste link.
+          <div style="margin-top: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <span style="color: #cbd5e1; font-size: 0.95rem;">5TB Google Drive Storage Folder</span>
+            <a href="https://drive.google.com/drive/folders/1SStfXqC6bhod_kHJ4bOnQ0Yx6UtrJ7H0?usp=sharing" target="_blank" style="color: #93c5fd; text-decoration: underline; font-size: 0.9rem; font-family: var(--font-pixel);">
+              Open Storage Folder ↗
+            </a>
+          </div>
+          <small style="color: #93c5fd; margin-top: 6px; display: block;">
+            💡 Drop your world zip into this shared folder to save cloud storage.
           </small>
-        </div>
-
-        <div class="form-group mc-inset-box" style="margin-bottom: 1rem;">
-          <label class="form-label mc-pixel-font" for="backupFileInput">
-            📂 Or Direct File Upload (.zip):
-          </label>
-          <input type="file" id="backupFileInput" class="form-input" accept=".zip" />
         </div>
 
         <div class="form-group">
@@ -281,7 +282,7 @@
         <div class="modal-actions">
           <button type="submit" class="btn btn-primary" id="createBackupSubmitBtn">
             <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" />
-            Create Backup
+            Create Backup Snapshot
           </button>
           <button type="button" class="btn btn-secondary" onclick="closeBackupModals()">Cancel</button>
         </div>
