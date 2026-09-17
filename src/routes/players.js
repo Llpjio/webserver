@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const { User } = require('../db/models');
 
 router.get('/', async (req, res, next) => {
   try {
-    const result = await db.query('SELECT id, name, can_host, has_voxy, mc_name, color FROM players ORDER BY id ASC');
-    const players = result.rows.map(p => ({
-      id: p.id,
-      name: p.name,
-      canHost: p.can_host === 1 || p.can_host === true,
-      hasVoxy: p.has_voxy === 1 || p.has_voxy === true,
-      mcName: p.mc_name,
-      color: p.color
+    const users = await User.find().sort({ createdAt: 1 });
+    const players = users.map(u => ({
+      id: u._id.toString(),
+      username: u.username,
+      name: u.displayName || u.username,
+      minecraftUsername: u.minecraftUsername,
+      canHost: u.canHost,
+      hasVoxy: u.hasVoxy,
+      color: u.color
     }));
     res.json({ players });
   } catch (err) {

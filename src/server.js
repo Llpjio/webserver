@@ -8,6 +8,7 @@ const db = require('./db');
 const { initWebSocketServer } = require('./services/websocket');
 const { startReaper } = require('./services/sessionManager');
 
+const authRouter = require('./routes/auth');
 const sessionRouter = require('./routes/session');
 const worldRouter = require('./routes/world');
 const playersRouter = require('./routes/players');
@@ -26,6 +27,7 @@ app.get('/healthz', (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/world', worldRouter);
 app.use('/api/players', playersRouter);
@@ -53,7 +55,7 @@ async function startServer() {
 
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`=============================================`);
-      console.log(`  E4ALL Host Coordinator Server Online`);
+      console.log(`  E4ALL Host Coordinator Online (MongoDB)`);
       console.log(`  Port: ${PORT}`);
       console.log(`  Mode: ${process.env.NODE_ENV || 'development'}`);
       console.log(`  Local URL: http://localhost:${PORT}`);

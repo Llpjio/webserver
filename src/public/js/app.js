@@ -1,11 +1,12 @@
 /**
  * E4ALL Minecraft World Host Coordinator — Frontend Application
+ * MongoDB Edition + User Authentication + Live Sync
  */
 
 const STATE = {
   theme: localStorage.getItem('e4all_theme') || 'mcnet',
-  selectedPlayerId: parseInt(localStorage.getItem('e4all_player_id') || '1', 10),
-  hostToken: localStorage.getItem('e4all_host_token') || null,
+  token: localStorage.getItem('e4all_jwt_token') || null,
+  currentUser: null,
   currentStatus: null,
   players: [],
   history: [],
@@ -17,11 +18,18 @@ const STATE = {
 // ================= INITIALIZATION =================
 document.addEventListener('DOMContentLoaded', async () => {
   setupThemeDropdown();
-  setupPlayerDropdown();
   setupWebSocket();
+
+  // Check current user if token exists
+  if (STATE.token) {
+    await fetchCurrentUser();
+  } else {
+    renderAuthHeader();
+  }
+
   await refreshAll();
 
-  // Periodic polling backup (every 10s) in case ws drops
+  // Periodic polling backup (every 10s)
   setInterval(fetchStatus, 10000);
 });
 
@@ -33,7 +41,7 @@ function setupThemeDropdown() {
       STATE.theme = e.target.value;
       localStorage.setItem('e4all_theme', STATE.theme);
       applyTheme(STATE.theme);
-      showToast(`Switched theme to ${STATE.theme === 'classic' ? 'Classic Textures' : 'Minecraft.net Animated'}`, 'info');
+      showToast(`Switched theme to ${STATE.theme === 'classic' ? 'Classic Textures' : 'Animated'}`, 'info');
     });
   }
   applyTheme(STATE.theme);
@@ -43,32 +51,148 @@ function applyTheme(themeName) {
   document.body.className = themeName === 'classic' ? 'theme-classic' : 'theme-mcnet';
 }
 
-function setupPlayerDropdown() {
-  const select = document.getElementById('playerSelect');
-  if (!select) return;
-  select.value = STATE.selectedPlayerId.toString();
+// ================= USER AUTHENTICATION =================
+async function fetchCurrentUser() {
+  if (!STATE.token) {
+    STATE.currentUser = null;
+    renderAuthHeader();
+    return;
+  }
 
-  select.addEventListener('change', (e) => {
-    STATE.selectedPlayerId = parseInt(e.target.value, 10);
-    localStorage.setItem('e4all_player_id', STATE.selectedPlayerId);
-    showToast(`Viewing as ${getSelectedPlayerName()}`, 'info');
+  try {
+    const res = await fetch('/api/auth/me', {
+      headers: { 'Authorization': `Bearer ${STATE.token}` }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      STATE.currentUser = data.user;
+    } else {
+      // Expired token
+      STATE.token = null;
+      STATE.currentUser = null;
+      localStorage.removeItem('e4all_jwt_token');
+    }
+  } catch (err) {
+    console.error('Error fetching current user:', err);
+  }
+  renderAuthHeader();
+  renderHero();
+}
+
+function renderAuthHeader() {
+  const container = document.getElementById('authHeaderContainer');
+  if (!container) return;
+
+  if (STATE.currentUser) {
+    container.innerHTML = `
+      <div class="user-profile-badge">
+        <span class="user-avatar-dot" style="background-color: ${STATE.currentUser.color || '#10b981'}"></span>
+        <span class="user-name-text">${escapeHtml(STATE.currentUser.displayName || STATE.currentUser.username)}</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="handleLogout()">Sign Out</button>
+    `;
+  } else {
+    container.innerHTML = `
+      <button class="btn btn-primary btn-sm" onclick="openLoginModal()">🔑 Sign In</button>
+      <button class="btn btn-secondary btn-sm" onclick="openRegisterModal()">📝 Register</button>
+    `;
+  }
+}
+
+function openLoginModal() {
+  closeAuthModals();
+  const modal = document.getElementById('loginModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function openRegisterModal() {
+  closeAuthModals();
+  const modal = document.getElementById('registerModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeAuthModals() {
+  const loginModal = document.getElementById('loginModal');
+  const regModal = document.getElementById('registerModal');
+  if (loginModal) loginModal.classList.add('hidden');
+  if (regModal) regModal.classList.add('hidden');
+}
+
+async function handleLoginSubmit(event) {
+  event.preventDefault();
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Login failed', 'error');
+      return;
+    }
+
+    STATE.token = data.token;
+    STATE.currentUser = data.user;
+    localStorage.setItem('e4all_jwt_token', data.token);
+
+    closeAuthModals();
+    showToast(`Welcome back, ${data.user.displayName}!`, 'success');
+    renderAuthHeader();
     renderHero();
-    renderRoster();
-  });
+    fetchPlayers();
+  } catch (err) {
+    showToast('Network error logging in', 'error');
+  }
 }
 
-function getSelectedPlayer() {
-  return STATE.players.find(p => p.id === STATE.selectedPlayerId) || {
-    id: STATE.selectedPlayerId,
-    name: `Player ${STATE.selectedPlayerId}`,
-    canHost: STATE.selectedPlayerId !== 4,
-    hasVoxy: STATE.selectedPlayerId !== 4
-  };
+async function handleRegisterSubmit(event) {
+  event.preventDefault();
+  const username = document.getElementById('regUsername').value.trim();
+  const displayName = document.getElementById('regDisplayName').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const canHost = document.getElementById('regCanHost').checked;
+  const hasVoxy = document.getElementById('regHasVoxy').checked;
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, displayName, password, canHost, hasVoxy })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Registration failed', 'error');
+      return;
+    }
+
+    STATE.token = data.token;
+    STATE.currentUser = data.user;
+    localStorage.setItem('e4all_jwt_token', data.token);
+
+    closeAuthModals();
+    showToast(`Account created! Welcome, ${data.user.displayName}!`, 'success');
+    renderAuthHeader();
+    renderHero();
+    fetchPlayers();
+  } catch (err) {
+    showToast('Network error registering', 'error');
+  }
 }
 
-function getSelectedPlayerName() {
-  const p = getSelectedPlayer();
-  return p ? p.name : `Player ${STATE.selectedPlayerId}`;
+function handleLogout() {
+  STATE.token = null;
+  STATE.currentUser = null;
+  localStorage.removeItem('e4all_jwt_token');
+  showToast('Signed out.', 'info');
+  renderAuthHeader();
+  renderHero();
 }
 
 // ================= WEBSOCKET REAL-TIME SYNC =================
@@ -84,9 +208,7 @@ function setupWebSocket() {
     STATE.ws = ws;
 
     ws.onopen = () => {
-      if (wsDot) {
-        wsDot.className = 'ws-dot connected';
-      }
+      if (wsDot) wsDot.className = 'ws-dot connected';
       if (wsText) wsText.textContent = 'Live Sync';
     };
 
@@ -97,6 +219,7 @@ function setupWebSocket() {
           STATE.currentStatus = msg.payload;
           renderHero();
           renderHeader();
+          renderTopHostBanner();
           renderRoster();
           checkHeartbeatRunner();
         } else if (msg.type === 'WORLD_VERSION_UPDATED') {
@@ -147,6 +270,7 @@ async function fetchStatus() {
     const data = await res.json();
     STATE.currentStatus = data;
     renderHeader();
+    renderTopHostBanner();
     renderHero();
     renderRoster();
     checkHeartbeatRunner();
@@ -171,9 +295,8 @@ function checkHeartbeatRunner() {
   const isHost = isCurrentUserHost();
   const sessionActive = STATE.currentStatus && STATE.currentStatus.status !== 'OFFLINE';
 
-  if (isHost && sessionActive && STATE.hostToken) {
+  if (isHost && sessionActive && STATE.token) {
     if (!STATE.heartbeatInterval) {
-      // Send immediate heartbeat and set interval every 15s
       sendHeartbeat();
       STATE.heartbeatInterval = setInterval(sendHeartbeat, 15000);
     }
@@ -186,12 +309,14 @@ function checkHeartbeatRunner() {
 }
 
 async function sendHeartbeat() {
-  if (!STATE.hostToken) return;
+  if (!STATE.token) return;
   try {
     await fetch('/api/session/heartbeat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      }
     });
   } catch (err) {
     console.warn('Heartbeat error:', err);
@@ -199,8 +324,8 @@ async function sendHeartbeat() {
 }
 
 function isCurrentUserHost() {
-  if (!STATE.currentStatus || !STATE.currentStatus.activeSession) return false;
-  return STATE.currentStatus.activeSession.hostPlayerId === STATE.selectedPlayerId;
+  if (!STATE.currentStatus || !STATE.currentStatus.activeSession || !STATE.currentUser) return false;
+  return STATE.currentStatus.activeSession.hostUserId === STATE.currentUser.id.toString();
 }
 
 // ================= RENDERING =================
@@ -209,6 +334,23 @@ function renderHeader() {
   const verElem = document.getElementById('headerWorldVersion');
   if (verElem) {
     verElem.textContent = `v${STATE.currentStatus.worldVersion}`;
+  }
+}
+
+function renderTopHostBanner() {
+  const banner = document.getElementById('activeHostTopBanner');
+  const hostNameElem = document.getElementById('activeHostName');
+  const statusTagElem = document.getElementById('activeHostStatusTag');
+
+  if (!banner || !hostNameElem || !statusTagElem || !STATE.currentStatus) return;
+
+  const session = STATE.currentStatus.activeSession;
+  if (session && STATE.currentStatus.status !== 'OFFLINE') {
+    banner.classList.remove('hidden');
+    hostNameElem.textContent = `${session.hostDisplayName} (@${session.hostUsername})`;
+    statusTagElem.textContent = session.status;
+  } else {
+    banner.classList.add('hidden');
   }
 }
 
@@ -224,13 +366,11 @@ function renderHero() {
   const isStale = STATE.currentStatus.isStale;
   const activeSession = STATE.currentStatus.activeSession;
   const isHost = isCurrentUserHost();
-  const currentPlayer = getSelectedPlayer();
+  const user = STATE.currentUser;
 
-  // Reset classes
-  heroCard.className = `card status-hero state-${status}`;
+  heroCard.className = `card status-hero mc-net-hero state-${status}`;
   statusText.textContent = isStale ? `${status} (STALE / NO HEARTBEAT)` : status;
 
-  // Manage Stopwatch Timer
   if (status === 'ONLINE' && activeSession && activeSession.sessionStartedAt) {
     timerBadge.classList.remove('hidden');
     startTimer(new Date(activeSession.sessionStartedAt).getTime());
@@ -241,7 +381,6 @@ function renderHero() {
 
   let html = '';
 
-  // Stale session alert if applicable
   if (isStale) {
     html += `
       <div class="stale-warning-box">
@@ -249,53 +388,55 @@ function renderHero() {
           <strong>⚠️ Host Heartbeat Lost:</strong>
           <span>No heartbeat received from host for ${STATE.currentStatus.secondsSinceHeartbeat || 90}+ seconds.</span>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="handleForceRelease()">Reset Stale Session</button>
+        ${user ? `<button class="btn btn-danger btn-sm" onclick="handleForceRelease()">Reset Stale Session</button>` : ''}
       </div>
     `;
   }
 
-  // Render State-Specific Hero Body
   switch (status) {
     case 'OFFLINE':
-      html += renderOfflineState(currentPlayer);
+      html += renderOfflineState(user);
       break;
     case 'CLAIMED':
-      html += renderClaimedState(activeSession, isHost);
+      html += renderClaimedState(activeSession, isHost, user);
       break;
     case 'STARTING':
-      html += renderStartingState(activeSession, isHost);
+      html += renderStartingState(activeSession, isHost, user);
       break;
     case 'ONLINE':
-      html += renderOnlineState(activeSession, isHost, currentPlayer);
+      html += renderOnlineState(activeSession, isHost, user);
       break;
     case 'SAVING':
-      html += renderSavingState(activeSession, isHost);
+      html += renderSavingState(activeSession, isHost, user);
       break;
     default:
-      html += renderOfflineState(currentPlayer);
+      html += renderOfflineState(user);
   }
 
   heroBody.innerHTML = html;
 }
 
-function renderOfflineState(currentPlayer) {
-  const canHost = currentPlayer && currentPlayer.canHost;
+function renderOfflineState(user) {
   return `
     <div class="hero-state-box">
       <h2 class="hero-title mc-pixel-font">Nobody is currently hosting</h2>
       <p class="hero-desc">
-        The Minecraft world is offline. Any host-capable player can claim the session, verify their local world copy, and launch via e4mc.
+        The Minecraft world is offline. Any signed-in host-capable player can claim the session, verify their local world copy, and launch via e4mc.
       </p>
       <div class="btn-actions-row">
-        ${canHost ? `
+        ${user ? (user.canHost ? `
           <button class="btn btn-primary" onclick="handleClaimHost()">
             <img src="/assets/textures/diamond_pickaxe.png" class="mc-tiny-icon" alt="Pickaxe" />
-            Become Host
+            Become Host (${escapeHtml(user.displayName)})
           </button>
         ` : `
-          <button class="btn btn-primary" disabled title="Player 4 is configured as Client Only">
+          <button class="btn btn-primary" disabled title="Your account is set as Client Only">
             <img src="/assets/textures/feather.png" class="mc-tiny-icon" alt="Feather" />
             Cannot Host (Client Only)
+          </button>
+        `) : `
+          <button class="btn btn-primary" onclick="openLoginModal()">
+            🔑 Sign In to Host World
           </button>
         `}
       </div>
@@ -303,7 +444,7 @@ function renderOfflineState(currentPlayer) {
   `;
 }
 
-function renderClaimedState(session, isHost) {
+function renderClaimedState(session, isHost, user) {
   if (isHost) {
     return `
       <div class="hero-state-box">
@@ -327,7 +468,7 @@ function renderClaimedState(session, isHost) {
     return `
       <div class="hero-state-box">
         <div class="host-badge-banner">👑 Host Claimed</div>
-        <h2 class="hero-title mc-pixel-font">${session.hostPlayerName} is preparing to host</h2>
+        <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is preparing to host</h2>
         <p class="hero-desc">
           Verifying local world baseline (v${session.worldVersionStart}). The session address will appear once Minecraft is opened to LAN.
         </p>
@@ -336,7 +477,7 @@ function renderClaimedState(session, isHost) {
   }
 }
 
-function renderStartingState(session, isHost) {
+function renderStartingState(session, isHost, user) {
   if (isHost) {
     return `
       <div class="hero-state-box">
@@ -379,7 +520,7 @@ function renderStartingState(session, isHost) {
     return `
       <div class="hero-state-box">
         <div class="host-badge-banner">👑 Starting Up</div>
-        <h2 class="hero-title mc-pixel-font">${session.hostPlayerName} is starting Minecraft...</h2>
+        <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is starting Minecraft...</h2>
         <p class="hero-desc">
           World is launching and establishing e4mc tunnel. Address will appear here automatically in real time!
         </p>
@@ -388,18 +529,17 @@ function renderStartingState(session, isHost) {
   }
 }
 
-function renderOnlineState(session, isHost, currentPlayer) {
+function renderOnlineState(session, isHost, user) {
   return `
     <div class="hero-state-box">
       <div class="host-badge-banner">
-        👑 Hosted by <strong style="color: #ffffff;">${session.hostPlayerName}</strong>
+        👑 Hosted by <strong style="color: #ffffff;">${escapeHtml(session.hostDisplayName)}</strong>
       </div>
       <h2 class="hero-title mc-pixel-font" style="color: var(--mc-green);">Minecraft World is ONLINE!</h2>
       <p class="hero-desc">
         Open Minecraft &rarr; <strong>Multiplayer</strong> &rarr; <strong>Direct Connection</strong> &rarr; Paste address below:
       </p>
 
-      <!-- Big e4mc Address Box -->
       <div class="e4mc-card">
         <div class="e4mc-header">e4mc Connection Address</div>
         <div class="e4mc-display-group">
@@ -411,7 +551,6 @@ function renderOnlineState(session, isHost, currentPlayer) {
         </div>
       </div>
 
-      <!-- Host Controls -->
       ${isHost ? `
         <div class="btn-actions-row">
           <button class="btn btn-secondary btn-sm" onclick="handleEditAddressPrompt('${session.e4mcAddress || ''}')">
@@ -427,7 +566,7 @@ function renderOnlineState(session, isHost, currentPlayer) {
   `;
 }
 
-function renderSavingState(session, isHost) {
+function renderSavingState(session, isHost, user) {
   if (isHost) {
     return `
       <div class="hero-state-box">
@@ -459,7 +598,7 @@ function renderSavingState(session, isHost) {
     return `
       <div class="hero-state-box">
         <div class="host-badge-banner">🛑 Wrapping Up</div>
-        <h2 class="hero-title mc-pixel-font">${session.hostPlayerName} is ending the session</h2>
+        <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is ending the session</h2>
         <p class="hero-desc">
           Saving world state and preparing authoritative version increment. World will be available for next host momentarily.
         </p>
@@ -470,22 +609,27 @@ function renderSavingState(session, isHost) {
 
 function renderRoster() {
   const container = document.getElementById('rosterList');
+  const countElem = document.getElementById('rosterCount');
   if (!container) return;
 
-  const activeHostId = STATE.currentStatus && STATE.currentStatus.activeSession 
-    ? STATE.currentStatus.activeSession.hostPlayerId 
+  if (countElem) {
+    countElem.textContent = `${STATE.players.length} Players`;
+  }
+
+  const activeHostUserId = STATE.currentStatus && STATE.currentStatus.activeSession 
+    ? STATE.currentStatus.activeSession.hostUserId 
     : null;
 
   container.innerHTML = STATE.players.map(p => {
-    const isCurrent = p.id === STATE.selectedPlayerId;
-    const isHostActive = p.id === activeHostId;
+    const isCurrent = STATE.currentUser && p.id === STATE.currentUser.id.toString();
+    const isHostActive = p.id === activeHostUserId;
 
     return `
-      <div class="roster-player-item ${isCurrent ? 'current-player' : ''}">
+      <div class="roster-player-item ${isCurrent ? 'current-user-item' : ''}">
         <div class="roster-player-info">
           <span class="player-avatar-dot" style="background-color: ${p.color || '#3b82f6'}"></span>
           <div>
-            <span class="player-name-text">${p.name} ${isCurrent ? '(You)' : ''}</span>
+            <span class="player-name-text">${escapeHtml(p.name)} ${isCurrent ? '(You)' : ''}</span>
           </div>
         </div>
         <div class="player-tags">
@@ -517,7 +661,7 @@ function renderHistory() {
     return `
       <tr>
         <td class="history-ver">v${item.version}</td>
-        <td class="history-player">${item.player_name || 'System'}</td>
+        <td class="history-player">${escapeHtml(item.player_name || 'System')}</td>
         <td>${escapeHtml(item.notes || 'Routine session')}</td>
         <td>${dateStr}</td>
       </tr>
@@ -525,19 +669,20 @@ function renderHistory() {
   }).join('');
 }
 
-// ================= ACTIONS & HANDLERS =================
+// ================= ACTIONS & API HANDLERS =================
 async function handleClaimHost() {
-  const player = getSelectedPlayer();
-  if (!player.canHost) {
-    showToast('Player 4 is not host-capable.', 'error');
+  if (!STATE.token) {
+    openLoginModal();
     return;
   }
 
   try {
     const res = await fetch('/api/session/claim', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: STATE.selectedPlayerId })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      }
     });
 
     const data = await res.json();
@@ -546,8 +691,6 @@ async function handleClaimHost() {
       return;
     }
 
-    STATE.hostToken = data.hostToken;
-    localStorage.setItem('e4all_host_token', data.hostToken);
     showToast('Host lease acquired! Check your local world copy.', 'success');
     fetchStatus();
   } catch (err) {
@@ -556,16 +699,15 @@ async function handleClaimHost() {
 }
 
 async function handleReadyToLaunch() {
-  if (!STATE.hostToken) {
-    showToast('Missing host token. Re-claim host.', 'error');
-    return;
-  }
+  if (!STATE.token) return;
 
   try {
     const res = await fetch('/api/session/ready', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      }
     });
 
     const data = await res.json();
@@ -582,6 +724,7 @@ async function handleReadyToLaunch() {
 }
 
 async function handleGoOnline() {
+  if (!STATE.token) return;
   const input = document.getElementById('e4mcInput');
   const address = input ? input.value.trim() : '';
 
@@ -593,8 +736,11 @@ async function handleGoOnline() {
   try {
     const res = await fetch('/api/session/online', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken, e4mcAddress: address })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      },
+      body: JSON.stringify({ e4mcAddress: address })
     });
 
     const data = await res.json();
@@ -611,14 +757,18 @@ async function handleGoOnline() {
 }
 
 async function handleEditAddressPrompt(currentAddress) {
+  if (!STATE.token) return;
   const newAddress = prompt('Enter updated e4mc address:', currentAddress);
   if (!newAddress || newAddress === currentAddress) return;
 
   try {
     const res = await fetch('/api/session/e4mc', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken, e4mcAddress: newAddress.trim() })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      },
+      body: JSON.stringify({ e4mcAddress: newAddress.trim() })
     });
 
     const data = await res.json();
@@ -635,6 +785,7 @@ async function handleEditAddressPrompt(currentAddress) {
 }
 
 async function handleBeginEndSession() {
+  if (!STATE.token) return;
   if (!confirm('Are you ready to end hosting? You will be prompted to verify Minecraft is cleanly closed.')) {
     return;
   }
@@ -642,8 +793,10 @@ async function handleBeginEndSession() {
   try {
     const res = await fetch('/api/session/end', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      }
     });
 
     const data = await res.json();
@@ -660,14 +813,18 @@ async function handleBeginEndSession() {
 }
 
 async function handleFinalizeSession() {
+  if (!STATE.token) return;
   const input = document.getElementById('sessionNotesInput');
   const notes = input ? input.value.trim() : '';
 
   try {
     const res = await fetch('/api/session/finalize', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken, notes })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      },
+      body: JSON.stringify({ notes })
     });
 
     const data = await res.json();
@@ -676,8 +833,6 @@ async function handleFinalizeSession() {
       return;
     }
 
-    STATE.hostToken = null;
-    localStorage.removeItem('e4all_host_token');
     showToast(`World published as v${data.newWorldVersion}! Status returned to OFFLINE.`, 'success');
     fetchStatus();
     fetchHistory();
@@ -687,17 +842,19 @@ async function handleFinalizeSession() {
 }
 
 async function handleCancelSession() {
+  if (!STATE.token) return;
   if (!confirm('Cancel this host session lease?')) return;
 
   try {
-    const res = await fetch('/api/session/release', {
+    await fetch('/api/session/release', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: STATE.hostToken, force: false })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      },
+      body: JSON.stringify({ force: false })
     });
 
-    STATE.hostToken = null;
-    localStorage.removeItem('e4all_host_token');
     showToast('Host lease cancelled.', 'info');
     fetchStatus();
   } catch (err) {
@@ -706,17 +863,19 @@ async function handleCancelSession() {
 }
 
 async function handleForceRelease() {
+  if (!STATE.token) return;
   if (!confirm('Force reset this stale session back to OFFLINE?')) return;
 
   try {
-    const res = await fetch('/api/session/release', {
+    await fetch('/api/session/release', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force: true, playerId: STATE.selectedPlayerId })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STATE.token}`
+      },
+      body: JSON.stringify({ force: true })
     });
 
-    STATE.hostToken = null;
-    localStorage.removeItem('e4all_host_token');
     showToast('Session reset to OFFLINE.', 'info');
     fetchStatus();
   } catch (err) {

@@ -53,26 +53,30 @@
         <div class="theme-selector mc-net-pill">
           <label for="themeSelect" class="identity-label">Theme:</label>
           <select id="themeSelect" class="identity-dropdown">
-            <option value="mcnet">🌟 Minecraft.net (Animated)</option>
-            <option value="classic">⛏️ Classic Textures</option>
+            <option value="mcnet">🌟 Animated</option>
+            <option value="classic">⛏️ Classic</option>
           </select>
         </div>
 
-        <!-- Player Identity Switcher -->
-        <div class="identity-selector mc-net-pill">
-          <label for="playerSelect" class="identity-label">Player:</label>
-          <select id="playerSelect" class="identity-dropdown">
-            <option value="1">Player 1 (Host)</option>
-            <option value="2">Player 2 (Host)</option>
-            <option value="3">Player 3 (Host)</option>
-            <option value="4">Player 4 (Client Only)</option>
-          </select>
+        <!-- User Authentication Top-Right Controls -->
+        <div class="auth-header-container" id="authHeaderContainer">
+          <!-- Populated by JS: [ Sign In ] [ Register ] or [ User Profile ] [ Logout ] -->
         </div>
       </div>
     </header>
 
     <!-- Notification Toast Area -->
     <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Active Host Notice on Top -->
+    <div class="active-host-top-banner hidden" id="activeHostTopBanner">
+      <div class="active-host-badge">
+        <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Host" />
+        <span class="mc-pixel-font">CURRENT HOST:</span>
+        <strong id="activeHostName" class="mc-pixel-font">Player 1</strong>
+        <span class="host-status-tag mc-pixel-font" id="activeHostStatusTag">ONLINE</span>
+      </div>
+    </div>
 
     <!-- Main Live Coordination Stage -->
     <main class="main-content">
@@ -96,135 +100,119 @@
         </div>
       </section>
 
-      <!-- 3-Column Minecraft.net Cards (About-Minecraft Theme Layout) -->
-      <div class="mcnet-cards-grid">
-        
-        <!-- Card 1: Overworld / Host Coordinator -->
-        <article class="mcnet-card card-overworld">
-          <div class="mcnet-card-media-stepped media-overworld">
-            <div class="stepped-illustration">
-              <img src="/assets/textures/grass_block_top.png" class="stepped-block b1" alt="Block" />
-              <img src="/assets/textures/crafting_table_top.png" class="stepped-block b2" alt="Block" />
-              <img src="/assets/textures/oak_log_top.png" class="stepped-block b3" alt="Block" />
+      <!-- Registered Players Roster & World Version History -->
+      <div class="dashboard-secondary-grid">
+        <!-- Players Roster -->
+        <section class="card roster-card mc-panel-roster">
+          <div class="card-header">
+            <div class="card-header-left">
+              <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Sign" />
+              <h2 class="card-title mc-pixel-font">Party Players</h2>
             </div>
+            <span class="card-subtitle mc-pixel-font" id="rosterCount">4 Players</span>
           </div>
-          <div class="mcnet-card-body">
-            <div class="mcnet-card-tags">
-              <span class="mcnet-tag-badge tag-public">JAVA EDITION</span>
-              <span class="mcnet-tag-badge tag-outline">LOCKING 🔒</span>
-            </div>
-            <h3 class="mcnet-card-title mc-pixel-font">Host Lease</h3>
-            <p class="mcnet-card-desc">
-              Atomic coordinator ensures only one player hosts the session at a time via e4mc.
-            </p>
-            
-            <div class="mcnet-feature-list">
-              <div class="mcnet-feature-item">
-                <span class="mcnet-dot dot-green"></span>
-                <strong>Atomic Claiming:</strong> Zero concurrency collisions.
-              </div>
-              <div class="mcnet-feature-item">
-                <span class="mcnet-dot dot-green"></span>
-                <strong>Live Heartbeats:</strong> 15s keepalive & stale auto-recovery.
-              </div>
-              <div class="mcnet-feature-item">
-                <span class="mcnet-dot dot-green"></span>
-                <strong>Version Bump:</strong> Monotonic save increments (v100+).
-              </div>
-            </div>
+          <div class="roster-list" id="rosterList">
+            <!-- Populated by JS -->
           </div>
-        </article>
+        </section>
 
-        <!-- Card 2: Nether / Neo Voxy Architecture -->
-        <article class="mcnet-card card-nether">
-          <div class="mcnet-card-media-stepped media-nether">
-            <div class="stepped-illustration">
-              <img src="/assets/textures/obsidian.png" class="stepped-block b1" alt="Obsidian" />
-              <img src="/assets/textures/deepslate.png" class="stepped-block b2" alt="Deepslate" />
-              <img src="/assets/textures/amethyst_block.png" class="stepped-block b3" alt="Amethyst" />
+        <!-- World Version History -->
+        <section class="card history-card mc-net-history">
+          <div class="card-header">
+            <div class="card-header-left">
+              <img src="/assets/textures/feather.png" class="mc-tiny-icon" alt="Log" />
+              <h2 class="card-title mc-pixel-font">World Version Log</h2>
             </div>
+            <span class="card-subtitle mc-pixel-font" id="historyCount">Loading...</span>
           </div>
-          <div class="mcnet-card-body">
-            <div class="mcnet-card-tags">
-              <span class="mcnet-tag-badge tag-nether">NEO VOXY</span>
-              <span class="mcnet-tag-badge tag-outline">LOCAL ONLY</span>
-            </div>
-            <h3 class="mcnet-card-title mc-pixel-font">LOD Caches</h3>
-            <p class="mcnet-card-desc">
-              Neo Voxy caches remain strictly local to PCs 1, 2, and 3 and are never uploaded.
-            </p>
-
-            <div class="mcnet-feature-list">
-              <div class="mcnet-feature-item">
-                <span class="mcnet-dot dot-purple"></span>
-                <strong>Client-Local:</strong> Divergent LOD caches are safe.
-              </div>
-              <div class="mcnet-feature-item">
-                <span class="mcnet-dot dot-purple"></span>
-                <strong>Authoritative Sync:</strong> Only save files sync.
-              </div>
-              <div class="mcnet-feature-item">
-                <span class="mcnet-dot dot-purple"></span>
-                <strong>Player 4 Compatible:</strong> Standard vanilla joins.
-              </div>
-            </div>
+          <div class="history-table-wrapper mc-net-table-box">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th class="mc-pixel-font">Version</th>
+                  <th class="mc-pixel-font">Host</th>
+                  <th class="mc-pixel-font">Notes</th>
+                  <th class="mc-pixel-font">Date / Time</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
           </div>
-        </article>
-
-        <!-- Card 3: Ocean / Party Roster -->
-        <article class="mcnet-card card-ocean">
-          <div class="mcnet-card-media-stepped media-ocean">
-            <div class="stepped-illustration">
-              <img src="/assets/textures/diamond_block.png" class="stepped-block b1" alt="Diamond" />
-              <img src="/assets/textures/emerald_block.png" class="stepped-block b2" alt="Emerald" />
-              <img src="/assets/textures/gold_block.png" class="stepped-block b3" alt="Gold" />
-            </div>
-          </div>
-          <div class="mcnet-card-body">
-            <div class="mcnet-card-tags">
-              <span class="mcnet-tag-badge tag-ocean">4 PLAYERS</span>
-              <span class="mcnet-tag-badge tag-outline">CO-OP ⛏️</span>
-            </div>
-            <h3 class="mcnet-card-title mc-pixel-font">Party Roster</h3>
-            <div class="roster-list" id="rosterList">
-              <!-- Populated by JS -->
-            </div>
-          </div>
-        </article>
-
+        </section>
       </div>
-
-      <!-- World Version History -->
-      <section class="card history-card mc-net-history">
-        <div class="card-header">
-          <div class="card-header-left">
-            <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Sign" />
-            <h2 class="card-title mc-pixel-font">World History Log</h2>
-          </div>
-          <span class="card-subtitle mc-pixel-font" id="historyCount">Loading...</span>
-        </div>
-        <div class="history-table-wrapper mc-net-table-box">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th class="mc-pixel-font">Version</th>
-                <th class="mc-pixel-font">Host</th>
-                <th class="mc-pixel-font">Notes</th>
-                <th class="mc-pixel-font">Date / Time</th>
-              </tr>
-            </thead>
-            <tbody id="historyTableBody">
-              <!-- Populated by JS -->
-            </tbody>
-          </table>
-        </div>
-      </section>
     </main>
 
     <!-- Footer -->
     <footer class="app-footer mc-net-footer">
-      <p class="mc-pixel-font">E4ALL Minecraft World Host Coordinator · Ready for Render Deployment</p>
+      <p class="mc-pixel-font">E4ALL Minecraft Coordinator · MongoDB Connected · Ready for Render Deployment</p>
     </footer>
+  </div>
+
+  <!-- AUTH MODALS -->
+  <!-- Sign In Modal -->
+  <div class="modal-overlay hidden" id="loginModal">
+    <div class="modal-card mc-panel-modal">
+      <div class="modal-header">
+        <h3 class="modal-title mc-pixel-font">🔑 Sign In to E4ALL</h3>
+        <button class="modal-close-btn" onclick="closeAuthModals()">✕</button>
+      </div>
+      <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="loginUsername">Username:</label>
+          <input type="text" id="loginUsername" class="form-input" placeholder="e.g. player1" required autofocus />
+        </div>
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="loginPassword">Password:</label>
+          <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required />
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary">Sign In</button>
+          <button type="button" class="btn btn-secondary" onclick="openRegisterModal()">Need an account? Register</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Register Modal -->
+  <div class="modal-overlay hidden" id="registerModal">
+    <div class="modal-card mc-panel-modal">
+      <div class="modal-header">
+        <h3 class="modal-title mc-pixel-font">📝 Register Player Account</h3>
+        <button class="modal-close-btn" onclick="closeAuthModals()">✕</button>
+      </div>
+      <form id="registerForm" onsubmit="handleRegisterSubmit(event)">
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="regUsername">Username:</label>
+          <input type="text" id="regUsername" class="form-input" placeholder="e.g. player5" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="regDisplayName">Display Name:</label>
+          <input type="text" id="regDisplayName" class="form-input" placeholder="e.g. Alex" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label mc-pixel-font" for="regPassword">Password:</label>
+          <input type="password" id="regPassword" class="form-input" placeholder="••••••••" required />
+        </div>
+        <div class="form-group-checkbox">
+          <label class="checkbox-label">
+            <input type="checkbox" id="regCanHost" checked />
+            <span class="mc-pixel-font">Can Host Sessions (Host Capable PC)</span>
+          </label>
+        </div>
+        <div class="form-group-checkbox">
+          <label class="checkbox-label">
+            <input type="checkbox" id="regHasVoxy" checked />
+            <span class="mc-pixel-font">Has Neo Voxy installed</span>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary">Create Account</button>
+          <button type="button" class="btn btn-secondary" onclick="openLoginModal()">Already have an account? Sign In</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script src="/js/mc_animated_bg.js"></script>

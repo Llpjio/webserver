@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const db = require('../db');
+const { User, Session, WorldVersion } = require('../db/models');
 const { broadcast } = require('./websocket');
 
 const HEARTBEAT_TIMEOUT_SECONDS = 90;
@@ -8,27 +8,16 @@ const HEARTBEAT_TIMEOUT_SECONDS = 90;
  * Get full authoritative system status
  */
 async function getStatus() {
-  // 1. Get latest world version
-  const latestVerRes = await db.query(
-    'SELECT version, notes, created_at FROM world_versions ORDER BY version DESC LIMIT 1'
-  );
-  const latestVersion = latestVerRes.rows[0] || { version: 100, notes: 'Baseline' };
+  const latestVer = await WorldVersion.findOne().sort({ version: -1 });
+  const currentWorldVersion = latestVer ? latestVer.version : 100;
 
-  // 2. Get active non-offline session
-  const activeSessionRes = await db.query(
-    `SELECT s.*, p.name as host_player_name, p.mc_name as host_mc_name, p.color as host_color
-     FROM sessions s
-     JOIN players p ON s.host_player_id = p.id
-     WHERE s.status != 'OFFLINE'
-     ORDER BY s.created_at DESC LIMIT 1`
-  );
+  const activeSession = await Session.findOne({ status: { $ne: 'OFFLINE' } }).sort({ createdAt: -1 });
 
-  let activeSession = activeSessionRes.rows[0] || null;
   let isStale = false;
   let secondsSinceHeartbeat = null;
 
   if (activeSession) {
-    const lastHeartbeat = new Date(activeSession.last_heartbeat_at || activeSession.created_at).getTime();
+    const lastHeartbeat = new Date(activeSession.lastHeartbeatAt || activeSession.createdAt).getTime();
     const now = Date.now();
     secondsSinceHeartbeat = Math.max(0, Math.floor((now - lastHeartbeat) / 1000));
 
@@ -42,102 +31,90 @@ async function getStatus() {
     isStale,
     secondsSinceHeartbeat,
     activeSession: activeSession ? {
-      id: activeSession.id,
-      hostPlayerId: activeSession.host_player_id,
-      hostPlayerName: activeSession.host_player_name,
-      hostMcName: activeSession.host_mc_name,
-      hostColor: activeSession.host_color,
+      id: activeSession.sessionId,
+      hostUserId: activeSession.hostUserId.toString(),
+      hostUsername: activeSession.hostUsername,
+      hostDisplayName: activeSession.hostDisplayName,
+      hostColor: activeSession.hostColor,
       status: activeSession.status,
-      e4mcAddress: activeSession.e4mc_address,
-      worldVersionStart: activeSession.world_version_start,
-      worldVersionEnd: activeSession.world_version_end,
-      sessionStartedAt: activeSession.session_started_at,
-      lastHeartbeatAt: activeSession.last_heartbeat_at,
-      createdAt: activeSession.created_at
+      e4mcAddress: activeSession.e4mcAddress,
+      worldVersionStart: activeSession.worldVersionStart,
+      worldVersionEnd: activeSession.worldVersionEnd,
+      sessionStartedAt: activeSession.sessionStartedAt ? activeSession.sessionStartedAt.toISOString() : null,
+      lastHeartbeatAt: activeSession.lastHeartbeatAt ? activeSession.lastHeartbeatAt.toISOString() : null,
+      createdAt: activeSession.createdAt.toISOString()
     } : null,
-    worldVersion: latestVersion.version,
-    worldVersionDetails: latestVersion,
+    worldVersion: currentWorldVersion,
+    worldVersionDetails: latestVer,
     serverTime: new Date().toISOString()
   };
 }
 
 /**
- * Atomic Host Claim
+ * Atomic Host Claim by an Authenticated User
  */
-async function claimHost(playerId) {
-  // Check player capabilities
-  const playerRes = await db.query('SELECT * FROM players WHERE id = $1', [playerId]);
-  const player = playerRes.rows[0];
-
-  if (!player) {
-    throw { status: 404, message: 'Player not found' };
-  }
-
-  const canHost = player.can_host === 1 || player.can_host === true;
-  if (!canHost) {
-    throw { status: 403, message: `${player.name} is not configured as host-capable in E4ALL.` };
+async function claimHost(user) {
+  if (!user.canHost) {
+    throw { status: 403, message: `${user.displayName || user.username} is not configured as host-capable in E4ALL.` };
   }
 
   // Check if an active session already exists
-  const existingRes = await db.query(
-    `SELECT s.*, p.name as host_player_name 
-     FROM sessions s 
-     JOIN players p ON s.host_player_id = p.id 
-     WHERE s.status != 'OFFLINE' 
-     ORDER BY s.created_at DESC LIMIT 1`
-  );
+  const active = await Session.findOne({ status: { $ne: 'OFFLINE' } }).sort({ createdAt: -1 });
 
-  if (existingRes.rows.length > 0) {
-    const active = existingRes.rows[0];
-    const lastHeartbeat = new Date(active.last_heartbeat_at || active.created_at).getTime();
+  if (active) {
+    const lastHeartbeat = new Date(active.lastHeartbeatAt || active.createdAt).getTime();
     const ageSeconds = Math.floor((Date.now() - lastHeartbeat) / 1000);
 
-    // If active session is genuinely abandoned (>120s without heartbeat and in CLAIMED/STARTING state),
-    // we can allow clean auto-supersede. Otherwise reject atomically.
+    // If abandoned (>120s without heartbeat in CLAIMED/STARTING state), auto-expire
     if (ageSeconds > 120 && (active.status === 'CLAIMED' || active.status === 'STARTING')) {
-      console.log(`[HostClaim] Stale abandoned session ${active.id} superseded by player ${player.name}`);
-      await db.query(
-        "UPDATE sessions SET status = 'OFFLINE', notes = 'Auto-expired due to stale host abandonment' WHERE id = $1",
-        [active.id]
-      );
+      console.log(`[HostClaim] Stale abandoned session ${active.sessionId} superseded by user ${user.username}`);
+      active.status = 'OFFLINE';
+      active.notes = 'Auto-expired due to stale host abandonment';
+      active.sessionEndedAt = new Date();
+      await active.save();
     } else {
       throw {
         status: 409,
-        message: `World is already claimed by ${active.host_player_name} (Status: ${active.status})`,
+        message: `World is currently claimed by ${active.hostDisplayName} (@${active.hostUsername}) (Status: ${active.status})`,
         activeSession: active
       };
     }
   }
 
   // Get current world version
-  const latestVerRes = await db.query(
-    'SELECT version FROM world_versions ORDER BY version DESC LIMIT 1'
-  );
-  const currentWorldVersion = latestVerRes.rows[0] ? latestVerRes.rows[0].version : 100;
+  const latestVer = await WorldVersion.findOne().sort({ version: -1 });
+  const currentWorldVersion = latestVer ? latestVer.version : 100;
 
-  // Create new session
   const sessionId = crypto.randomUUID();
-  const hostToken = crypto.randomBytes(24).toString('hex');
-  const now = new Date().toISOString();
+  const now = new Date();
 
-  await db.query(
-    `INSERT INTO sessions 
-     (id, host_player_id, host_token, status, e4mc_address, world_version_start, session_started_at, last_heartbeat_at, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [sessionId, playerId, hostToken, 'CLAIMED', null, currentWorldVersion, null, now, now]
-  );
+  const session = new Session({
+    sessionId,
+    hostUserId: user._id,
+    hostUsername: user.username,
+    hostDisplayName: user.displayName || user.username,
+    hostColor: user.color || '#10b981',
+    status: 'CLAIMED',
+    e4mcAddress: null,
+    worldVersionStart: currentWorldVersion,
+    sessionStartedAt: null,
+    lastHeartbeatAt: now,
+    createdAt: now
+  });
+
+  await session.save();
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
 
   return {
     sessionId,
-    hostToken,
-    player: {
-      id: player.id,
-      name: player.name,
-      canHost: true,
-      hasVoxy: player.has_voxy === 1 || player.has_voxy === true
+    hostUser: {
+      id: user._id,
+      username: user.username,
+      displayName: user.displayName,
+      canHost: user.canHost,
+      hasVoxy: user.hasVoxy
     },
     worldVersion: currentWorldVersion,
     status
@@ -145,36 +122,33 @@ async function claimHost(playerId) {
 }
 
 /**
- * Validate host token and return active session
+ * Validate that the caller is the active host user
  */
-async function validateHostToken(hostToken) {
-  if (!hostToken) {
-    throw { status: 401, message: 'Host authentication token is required' };
+async function validateActiveHost(user) {
+  if (!user) {
+    throw { status: 401, message: 'Authentication required' };
   }
 
-  const res = await db.query(
-    "SELECT * FROM sessions WHERE host_token = $1 AND status != 'OFFLINE'",
-    [hostToken]
-  );
-
-  if (res.rows.length === 0) {
-    throw { status: 403, message: 'Invalid host token or session is no longer active' };
+  const session = await Session.findOne({ status: { $ne: 'OFFLINE' } }).sort({ createdAt: -1 });
+  if (!session) {
+    throw { status: 404, message: 'No active session found' };
   }
 
-  return res.rows[0];
+  if (session.hostUserId.toString() !== user._id.toString()) {
+    throw { status: 403, message: `Only the active host (${session.hostDisplayName}) can perform this action.` };
+  }
+
+  return session;
 }
 
 /**
- * Advance host state to STARTING
+ * Host marks world verified & ready -> STARTING
  */
-async function readySession(hostToken) {
-  const session = await validateHostToken(hostToken);
-  const now = new Date().toISOString();
-
-  await db.query(
-    "UPDATE sessions SET status = 'STARTING', last_heartbeat_at = $1 WHERE id = $2",
-    [now, session.id]
-  );
+async function readySession(user) {
+  const session = await validateActiveHost(user);
+  session.status = 'STARTING';
+  session.lastHeartbeatAt = new Date();
+  await session.save();
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
@@ -182,26 +156,22 @@ async function readySession(hostToken) {
 }
 
 /**
- * Advance host state to ONLINE with e4mc link
+ * Host submits e4mc tunnel link -> ONLINE
  */
-async function setSessionOnline(hostToken, e4mcAddress) {
-  const session = await validateHostToken(hostToken);
+async function setSessionOnline(user, e4mcAddress) {
+  const session = await validateActiveHost(user);
   if (!e4mcAddress || typeof e4mcAddress !== 'string' || e4mcAddress.trim().length === 0) {
     throw { status: 400, message: 'Valid e4mc address is required (e.g. abcde.e4mc.link)' };
   }
 
   const cleanAddress = e4mcAddress.trim();
-  const now = new Date().toISOString();
+  const now = new Date();
 
-  await db.query(
-    `UPDATE sessions 
-     SET status = 'ONLINE', 
-         e4mc_address = $1, 
-         session_started_at = COALESCE(session_started_at, $2),
-         last_heartbeat_at = $2 
-     WHERE id = $3`,
-    [cleanAddress, now, session.id]
-  );
+  session.status = 'ONLINE';
+  session.e4mcAddress = cleanAddress;
+  if (!session.sessionStartedAt) session.sessionStartedAt = now;
+  session.lastHeartbeatAt = now;
+  await session.save();
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
@@ -209,21 +179,17 @@ async function setSessionOnline(hostToken, e4mcAddress) {
 }
 
 /**
- * Update e4mc address during active session
+ * Update e4mc address
  */
-async function updateE4mc(hostToken, e4mcAddress) {
-  const session = await validateHostToken(hostToken);
+async function updateE4mc(user, e4mcAddress) {
+  const session = await validateActiveHost(user);
   if (!e4mcAddress || typeof e4mcAddress !== 'string' || e4mcAddress.trim().length === 0) {
     throw { status: 400, message: 'Valid e4mc address is required' };
   }
 
-  const cleanAddress = e4mcAddress.trim();
-  const now = new Date().toISOString();
-
-  await db.query(
-    "UPDATE sessions SET e4mc_address = $1, last_heartbeat_at = $2 WHERE id = $3",
-    [cleanAddress, now, session.id]
-  );
+  session.e4mcAddress = e4mcAddress.trim();
+  session.lastHeartbeatAt = new Date();
+  await session.save();
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
@@ -231,31 +197,24 @@ async function updateE4mc(hostToken, e4mcAddress) {
 }
 
 /**
- * Receive heartbeat from host
+ * Record keepalive heartbeat from host
  */
-async function recordHeartbeat(hostToken) {
-  const session = await validateHostToken(hostToken);
-  const now = new Date().toISOString();
-
-  await db.query(
-    "UPDATE sessions SET last_heartbeat_at = $1 WHERE id = $2",
-    [now, session.id]
-  );
-
-  return { success: true, timestamp: now };
+async function recordHeartbeat(user) {
+  const session = await validateActiveHost(user);
+  const now = new Date();
+  session.lastHeartbeatAt = now;
+  await session.save();
+  return { success: true, timestamp: now.toISOString() };
 }
 
 /**
- * Host begins ending session -> status SAVING
+ * Host begins ending session -> SAVING
  */
-async function beginEndSession(hostToken) {
-  const session = await validateHostToken(hostToken);
-  const now = new Date().toISOString();
-
-  await db.query(
-    "UPDATE sessions SET status = 'SAVING', last_heartbeat_at = $1 WHERE id = $2",
-    [now, session.id]
-  );
+async function beginEndSession(user) {
+  const session = await validateActiveHost(user);
+  session.status = 'SAVING';
+  session.lastHeartbeatAt = new Date();
+  await session.save();
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
@@ -263,40 +222,36 @@ async function beginEndSession(hostToken) {
 }
 
 /**
- * Host validates clean Minecraft stop, increments world version, transitions to OFFLINE
+ * Host confirms Minecraft closed, increments world version -> OFFLINE
  */
-async function finalizeSession(hostToken, notes = '') {
-  const session = await validateHostToken(hostToken);
-  const now = new Date().toISOString();
+async function finalizeSession(user, notes = '') {
+  const session = await validateActiveHost(user);
+  const now = new Date();
 
-  // Get current version to calculate next version
-  const latestVerRes = await db.query(
-    'SELECT version FROM world_versions ORDER BY version DESC LIMIT 1'
-  );
-  const currentVer = latestVerRes.rows[0] ? latestVerRes.rows[0].version : 100;
+  const latestVer = await WorldVersion.findOne().sort({ version: -1 });
+  const currentVer = latestVer ? latestVer.version : 100;
   const nextVer = currentVer + 1;
 
-  // Insert new authoritative world version
-  const cleanNotes = notes && notes.trim().length > 0 
-    ? notes.trim() 
-    : `Session finished cleanly by host`;
+  const cleanNotes = notes && notes.trim().length > 0
+    ? notes.trim()
+    : `Session finished cleanly by ${user.displayName || user.username}`;
 
-  await db.query(
-    `INSERT INTO world_versions (version, parent_version, created_by_player_id, session_id, notes, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [nextVer, currentVer, session.host_player_id, session.id, cleanNotes, now]
-  );
+  const newVerDoc = new WorldVersion({
+    version: nextVer,
+    parentVersion: currentVer,
+    createdByUserId: user._id,
+    createdByUsername: user.displayName || user.username,
+    sessionId: session.sessionId,
+    notes: cleanNotes,
+    createdAt: now
+  });
+  await newVerDoc.save();
 
-  // Update session to OFFLINE
-  await db.query(
-    `UPDATE sessions 
-     SET status = 'OFFLINE', 
-         world_version_end = $1, 
-         session_ended_at = $2, 
-         notes = $3 
-     WHERE id = $4`,
-    [nextVer, now, cleanNotes, session.id]
-  );
+  session.status = 'OFFLINE';
+  session.worldVersionEnd = nextVer;
+  session.sessionEndedAt = now;
+  session.notes = cleanNotes;
+  await session.save();
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
@@ -310,28 +265,29 @@ async function finalizeSession(hostToken, notes = '') {
 }
 
 /**
- * Release host lock without version bump (e.g. cancelled before start or force release)
+ * Cancel or force release
  */
-async function releaseSession(hostToken, force = false, playerId = null) {
-  const now = new Date().toISOString();
+async function releaseSession(user, force = false) {
+  const now = new Date();
+  const session = await Session.findOne({ status: { $ne: 'OFFLINE' } }).sort({ createdAt: -1 });
+
+  if (!session) {
+    return await getStatus();
+  }
 
   if (force) {
-    // If forcing, verify active session exists
-    const activeRes = await db.query("SELECT * FROM sessions WHERE status != 'OFFLINE' ORDER BY created_at DESC LIMIT 1");
-    if (activeRes.rows.length === 0) {
-      return await getStatus();
-    }
-    const session = activeRes.rows[0];
-    await db.query(
-      "UPDATE sessions SET status = 'OFFLINE', session_ended_at = $1, notes = 'Force released by player' WHERE id = $2",
-      [now, session.id]
-    );
+    session.status = 'OFFLINE';
+    session.sessionEndedAt = now;
+    session.notes = `Force released by ${user ? (user.displayName || user.username) : 'user'}`;
+    await session.save();
   } else {
-    const session = await validateHostToken(hostToken);
-    await db.query(
-      "UPDATE sessions SET status = 'OFFLINE', session_ended_at = $1, notes = 'Cancelled by host' WHERE id = $2",
-      [now, session.id]
-    );
+    if (session.hostUserId.toString() !== user._id.toString()) {
+      throw { status: 403, message: 'Only the active host can cancel this session lease.' };
+    }
+    session.status = 'OFFLINE';
+    session.sessionEndedAt = now;
+    session.notes = 'Cancelled by host';
+    await session.save();
   }
 
   const status = await getStatus();
@@ -339,23 +295,22 @@ async function releaseSession(hostToken, force = false, playerId = null) {
   return status;
 }
 
-// Background reaper for heartbeat staleness
+// Background reaper for abandoned host leases
 function startReaper() {
   setInterval(async () => {
     try {
-      const activeRes = await db.query("SELECT * FROM sessions WHERE status != 'OFFLINE' LIMIT 1");
-      if (activeRes.rows.length > 0) {
-        const session = activeRes.rows[0];
-        const lastHb = new Date(session.last_heartbeat_at || session.created_at).getTime();
+      const active = await Session.findOne({ status: { $in: ['CLAIMED', 'STARTING'] } }).sort({ createdAt: -1 });
+      if (active) {
+        const lastHb = new Date(active.lastHeartbeatAt || active.createdAt).getTime();
         const ageSec = Math.floor((Date.now() - lastHb) / 1000);
 
-        // If host was preparing (CLAIMED / STARTING) and disappeared for > 150 seconds, auto-release
-        if (ageSec > 150 && (session.status === 'CLAIMED' || session.status === 'STARTING')) {
-          console.log(`[Reaper] Releasing abandoned session ${session.id} (inactive for ${ageSec}s)`);
-          await db.query(
-            "UPDATE sessions SET status = 'OFFLINE', notes = 'Auto-released by coordinator due to inactivity' WHERE id = $1",
-            [session.id]
-          );
+        if (ageSec > 150) {
+          console.log(`[Reaper] Releasing abandoned session ${active.sessionId} (inactive for ${ageSec}s)`);
+          active.status = 'OFFLINE';
+          active.notes = 'Auto-released by coordinator due to inactivity';
+          active.sessionEndedAt = new Date();
+          await active.save();
+
           const status = await getStatus();
           broadcast('SESSION_STATE_CHANGED', status);
         }

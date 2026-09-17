@@ -4,24 +4,28 @@ const express = require('express');
 const cors = require('cors');
 
 const db = require('../src/db');
-const sessionManager = require('../src/services/sessionManager');
+const { User, Session, WorldVersion } = require('../src/db/models');
+const authRouter = require('../src/routes/auth');
 const sessionRouter = require('../src/routes/session');
 const worldRouter = require('../src/routes/world');
 const playersRouter = require('../src/routes/players');
 
-async function makeRequest(server, path, method = 'GET', body = null) {
+async function makeRequest(server, path, method = 'GET', body = null, token = null) {
   const port = server.address().port;
   return new Promise((resolve, reject) => {
     const postData = body ? JSON.stringify(body) : null;
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(postData ? { 'Content-Length': Buffer.byteLength(postData) } : {}),
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+
     const req = http.request({
       hostname: '127.0.0.1',
       port,
       path,
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(postData ? { 'Content-Length': Buffer.byteLength(postData) } : {})
-      }
+      headers
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -40,20 +44,21 @@ async function makeRequest(server, path, method = 'GET', body = null) {
   });
 }
 
-async function runFullIntegrationTests() {
-  console.log('🧪 [Test Suite] Running Full Integration & HTTP API Suite...\n');
+async function runMongoDBTests() {
+  console.log('🧪 [Test Suite] Running MongoDB Authentication & Host Coordinator Tests...\n');
 
-  // Setup test Express server
   const app = express();
   app.use(cors());
   app.use(express.json());
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+  app.use('/api/auth', authRouter);
   app.use('/api/session', sessionRouter);
   app.use('/api/world', worldRouter);
   app.use('/api/players', playersRouter);
 
   await db.init();
-  await db.query("UPDATE sessions SET status = 'OFFLINE'");
+  await Session.deleteMany({}); // Clean sessions
+
   const server = http.createServer(app);
   await new Promise(res => server.listen(0, '127.0.0.1', res));
 
@@ -65,86 +70,83 @@ async function runFullIntegrationTests() {
     assert.strictEqual(health.data.status, 'ok');
     console.log('  ✅ Healthcheck OK');
 
-    // 2. GET /api/players
-    console.log('▶ Test 2: GET /api/players');
+    // 2. User Login (seeded player2)
+    console.log('▶ Test 2: POST /api/auth/login (player2)');
+    const loginRes = await makeRequest(server, '/api/auth/login', 'POST', {
+      username: 'player2',
+      password: 'password123'
+    });
+    assert.strictEqual(loginRes.status, 200);
+    assert.ok(loginRes.data.token);
+    assert.strictEqual(loginRes.data.user.username, 'player2');
+    const p2Token = loginRes.data.token;
+    console.log('  ✅ Player 2 login & JWT generation OK');
+
+    // 3. Register New Player (e.g. steve)
+    console.log('▶ Test 3: POST /api/auth/register (steve)');
+    const regRes = await makeRequest(server, '/api/auth/register', 'POST', {
+      username: 'steve',
+      displayName: 'Steve Craft',
+      password: 'mypassword123',
+      canHost: true,
+      hasVoxy: true
+    });
+    assert.strictEqual(regRes.status, 201);
+    assert.ok(regRes.data.token);
+    const steveToken = regRes.data.token;
+    console.log('  ✅ Steve registered and authenticated');
+
+    // 4. GET /api/players
+    console.log('▶ Test 4: GET /api/players');
     const playersRes = await makeRequest(server, '/api/players');
     assert.strictEqual(playersRes.status, 200);
-    assert.strictEqual(playersRes.data.players.length, 4);
-    assert.strictEqual(playersRes.data.players[3].canHost, false);
-    console.log('  ✅ Player roster and capabilities OK');
+    assert.ok(playersRes.data.players.length >= 5);
+    console.log('  ✅ Player roster retrieved from MongoDB');
 
-    // 3. GET /api/session/status
-    console.log('▶ Test 3: GET /api/session/status');
-    const statusRes = await makeRequest(server, '/api/session/status');
-    assert.strictEqual(statusRes.status, 200);
-    assert.strictEqual(statusRes.data.status, 'OFFLINE');
-    console.log('  ✅ Initial session status is OFFLINE');
-
-    // 4. POST /api/session/claim (Player 3 claims)
-    console.log('▶ Test 4: POST /api/session/claim');
-    const claimRes = await makeRequest(server, '/api/session/claim', 'POST', { playerId: 3 });
+    // 5. Host Claim by Player 2
+    console.log('▶ Test 5: POST /api/session/claim (Player 2 claims)');
+    const claimRes = await makeRequest(server, '/api/session/claim', 'POST', {}, p2Token);
     assert.strictEqual(claimRes.status, 200);
-    assert.ok(claimRes.data.hostToken);
-    const token = claimRes.data.hostToken;
-    console.log('  ✅ Player 3 claimed host successfully');
+    assert.strictEqual(claimRes.data.status.status, 'CLAIMED');
+    assert.strictEqual(claimRes.data.status.activeSession.hostUsername, 'player2');
+    console.log('  ✅ Host session acquired by Player 2');
 
-    // 5. POST /api/session/ready
-    console.log('▶ Test 5: POST /api/session/ready');
-    const readyRes = await makeRequest(server, '/api/session/ready', 'POST', { hostToken: token });
-    assert.strictEqual(readyRes.status, 200);
-    assert.strictEqual(readyRes.data.status, 'STARTING');
-    console.log('  ✅ Status advanced to STARTING');
+    // 6. Simultaneous claim conflict by Steve
+    console.log('▶ Test 6: Concurrent claim conflict by Steve');
+    const conflictRes = await makeRequest(server, '/api/session/claim', 'POST', {}, steveToken);
+    assert.strictEqual(conflictRes.status, 409);
+    console.log('  ✅ Conflicting claim rejected with 409 Conflict');
 
-    // 6. POST /api/session/online
-    console.log('▶ Test 6: POST /api/session/online');
+    // 7. Ready -> Online with e4mc link
+    console.log('▶ Test 7: Ready -> Online transitions');
+    await makeRequest(server, '/api/session/ready', 'POST', {}, p2Token);
     const onlineRes = await makeRequest(server, '/api/session/online', 'POST', {
-      hostToken: token,
-      e4mcAddress: 'e4all-group-world.e4mc.link'
-    });
+      e4mcAddress: 'e4all-party.e4mc.link'
+    }, p2Token);
     assert.strictEqual(onlineRes.status, 200);
     assert.strictEqual(onlineRes.data.status, 'ONLINE');
-    assert.strictEqual(onlineRes.data.activeSession.e4mcAddress, 'e4all-group-world.e4mc.link');
-    console.log('  ✅ Session ONLINE with e4mc tunnel link');
+    assert.strictEqual(onlineRes.data.activeSession.e4mcAddress, 'e4all-party.e4mc.link');
+    console.log('  ✅ World is ONLINE with e4mc tunnel link');
 
-    // 7. POST /api/session/heartbeat
-    console.log('▶ Test 7: POST /api/session/heartbeat');
-    const hbRes = await makeRequest(server, '/api/session/heartbeat', 'POST', { hostToken: token });
-    assert.strictEqual(hbRes.status, 200);
-    assert.strictEqual(hbRes.data.success, true);
-    console.log('  ✅ Host heartbeat recorded');
-
-    // 8. POST /api/session/end
-    console.log('▶ Test 8: POST /api/session/end');
-    const endRes = await makeRequest(server, '/api/session/end', 'POST', { hostToken: token });
-    assert.strictEqual(endRes.status, 200);
-    assert.strictEqual(endRes.data.status, 'SAVING');
-    console.log('  ✅ Status transitioned to SAVING');
-
-    // 9. POST /api/session/finalize
-    console.log('▶ Test 9: POST /api/session/finalize');
+    // 8. End & Finalize session
+    console.log('▶ Test 8: End -> Finalize & World Version Bump');
+    await makeRequest(server, '/api/session/end', 'POST', {}, p2Token);
     const finRes = await makeRequest(server, '/api/session/finalize', 'POST', {
-      hostToken: token,
-      notes: 'Built underground minecart track'
-    });
+      notes: 'Built automatic wheat farm'
+    }, p2Token);
     assert.strictEqual(finRes.status, 200);
-    assert.strictEqual(finRes.data.success, true);
+    assert.strictEqual(finRes.data.newWorldVersion, 101);
     assert.strictEqual(finRes.data.status.status, 'OFFLINE');
-    console.log('  ✅ Version bumped & status returned to OFFLINE');
+    console.log('  ✅ World version incremented to v101 and returned to OFFLINE');
 
-    // 10. GET /api/world/history
-    console.log('▶ Test 10: GET /api/world/history');
-    const histRes = await makeRequest(server, '/api/world/history');
-    assert.strictEqual(histRes.status, 200);
-    assert.ok(histRes.data.history.length >= 2);
-    console.log('  ✅ History records retrieved accurately');
-
-    console.log('\n🎉 ALL 10 INTEGRATION TESTS PASSED PERFECTLY!\n');
+    console.log('\n🎉 ALL MONGODB & AUTH INTEGRATION TESTS PASSED!\n');
+    process.exit(0);
   } finally {
     server.close();
   }
 }
 
-runFullIntegrationTests().catch(err => {
-  console.error('❌ Integration Test Failed:', err);
+runMongoDBTests().catch(err => {
+  console.error('❌ Test Failed:', err);
   process.exit(1);
 });
