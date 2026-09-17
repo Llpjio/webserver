@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { WorldVersion, Session } = require('../db/models');
 const storageService = require('../services/storage');
+const googleDriveService = require('../services/googleDrive');
 const { authenticateToken } = require('../middleware/auth');
 const { broadcast } = require('../services/websocket');
 
@@ -30,6 +31,7 @@ router.get('/', async (req, res, next) => {
         fileName: b.fileName || `world_v${b.version}.zip`,
         fileSize: b.fileSize || 0,
         storageType: b.storageType || 'none',
+        gdriveFileId: b.gdriveFileId || null,
         isLocked: !!b.isLocked,
         isActive: b.version === currentActiveVersion,
         downloadUrl,
@@ -59,10 +61,38 @@ router.post('/create', authenticateToken, upload.single('worldFile'), async (req
       fileName: `world_v${nextVer}.zip`,
       fileSize: 0,
       fileUrl: storageService.GDRIVE_STORAGE_URL,
-      storageType: 'gdrive'
+      storageType: 'gdrive',
+      gdriveFileId: null
     };
 
-    if (gdriveUrl && gdriveUrl.trim()) {
+    const googleAccount = await googleDriveService.getActiveGoogleAccount();
+
+    if (req.file && googleAccount) {
+      try {
+        const driveRes = await googleDriveService.uploadWorldToDrive(
+          nextVer,
+          req.file.buffer,
+          req.file.originalname,
+          notes,
+          googleAccount
+        );
+        fileInfo = {
+          fileName: driveRes.fileName,
+          fileSize: driveRes.fileSize,
+          fileUrl: driveRes.webViewLink,
+          storageType: 'gdrive',
+          gdriveFileId: driveRes.fileId
+        };
+      } catch (dErr) {
+        console.warn('[GDrive Upload Warning]', dErr.message);
+        fileInfo = await storageService.uploadWorldFile(
+          nextVer,
+          req.file.buffer,
+          req.file.originalname,
+          req.file.mimetype
+        );
+      }
+    } else if (gdriveUrl && gdriveUrl.trim()) {
       fileInfo = storageService.processGoogleDriveLink(nextVer, gdriveUrl.trim());
     } else if (req.file) {
       fileInfo = await storageService.uploadWorldFile(
@@ -84,6 +114,7 @@ router.post('/create', authenticateToken, upload.single('worldFile'), async (req
       fileSize: fileInfo.fileSize,
       fileUrl: fileInfo.fileUrl,
       storageType: fileInfo.storageType,
+      gdriveFileId: fileInfo.gdriveFileId || null,
       isLocked: false,
       isAuthoritative: true
     });
@@ -136,6 +167,7 @@ router.post('/:version/restore', authenticateToken, async (req, res, next) => {
       fileSize: targetBackup.fileSize,
       fileUrl: targetBackup.fileUrl,
       storageType: targetBackup.storageType,
+      gdriveFileId: targetBackup.gdriveFileId,
       isLocked: true,
       isAuthoritative: true
     });
@@ -197,6 +229,10 @@ router.delete('/:version', authenticateToken, async (req, res, next) => {
       return res.status(400).json({ error: 'Cannot delete the currently active latest world version.' });
     }
 
+    if (doc.gdriveFileId) {
+      await googleDriveService.deleteDriveFile(doc.gdriveFileId);
+    }
+
     await WorldVersion.deleteOne({ version: versionNum });
     res.json({ success: true, message: `Backup v${versionNum} deleted.` });
   } catch (err) {
@@ -205,3 +241,4 @@ router.delete('/:version', authenticateToken, async (req, res, next) => {
 });
 
 module.exports = router;
+

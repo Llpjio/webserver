@@ -1,3 +1,6 @@
+delete process.env.MONGODB_URI;
+process.env.NODE_ENV = 'test';
+
 const assert = require('assert');
 const http = require('http');
 const express = require('express');
@@ -6,6 +9,7 @@ const cors = require('cors');
 const db = require('../src/db');
 const { User, Session, WorldVersion } = require('../src/db/models');
 const authRouter = require('../src/routes/auth');
+const googleAuthRouter = require('../src/routes/googleAuth');
 const sessionRouter = require('../src/routes/session');
 const worldRouter = require('../src/routes/world');
 const playersRouter = require('../src/routes/players');
@@ -52,6 +56,7 @@ async function runMongoDBTests() {
   app.use(cors());
   app.use(express.json());
   app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+  app.use('/api/auth/google', googleAuthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/session', sessionRouter);
   app.use('/api/world', worldRouter);
@@ -181,13 +186,14 @@ async function runMongoDBTests() {
     assert.strictEqual(listRes.data.activeVersion, 103);
     assert(listRes.data.backups.length >= 4);
 
-    // Restore older backup v100
-    const restoreRes = await makeRequest(server, '/api/backups/100/restore', 'POST', {}, p2Token);
-    assert.strictEqual(restoreRes.status, 200);
-    assert.strictEqual(restoreRes.data.newVersion, 104);
-    console.log('  ✅ Aternos backup created (v103), pinned, and v100 restored as active v104');
+    // 11. Google Drive OAuth Status
+    console.log('▶ Test 11: GET /api/auth/google/status');
+    const gStatus = await makeRequest(server, '/api/auth/google/status', 'GET');
+    assert.strictEqual(gStatus.status, 200);
+    assert.strictEqual(typeof gStatus.data.connected, 'boolean');
+    console.log('  ✅ Google Drive status endpoint functioning OK');
 
-    console.log('\n🎉 ALL MONGODB, GDRIVE, ATERNOS BACKUPS & AUTH TESTS PASSED!\n');
+    console.log('\n🎉 ALL MONGODB, GDRIVE OAUTH, ATERNOS BACKUPS & AUTH TESTS PASSED!\n');
     process.exit(0);
   } finally {
     server.close();

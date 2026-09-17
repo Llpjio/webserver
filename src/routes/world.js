@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { WorldVersion } = require('../db/models');
 const storageService = require('../services/storage');
+const googleDriveService = require('../services/googleDrive');
 const { authenticateToken } = require('../middleware/auth');
 const sessionManager = require('../services/sessionManager');
 
@@ -27,6 +28,7 @@ router.get('/latest', async (req, res, next) => {
         fileName: latest.fileName,
         fileSize: latest.fileSize,
         storageType: latest.storageType,
+        gdriveFileId: latest.gdriveFileId,
         downloadUrl,
         createdAt: latest.createdAt
       }
@@ -66,6 +68,19 @@ router.get('/download/:version', async (req, res, next) => {
       return res.status(404).send('World version not found');
     }
 
+    if (doc.gdriveFileId) {
+      try {
+        const stream = await googleDriveService.getDriveDownloadStream(doc.gdriveFileId);
+        if (stream) {
+          res.setHeader('Content-Disposition', `attachment; filename="${doc.fileName || `world_v${versionNum}.zip`}"`);
+          res.setHeader('Content-Type', 'application/zip');
+          return stream.pipe(res);
+        }
+      } catch (streamErr) {
+        console.warn('[GDrive Stream Download Error]', streamErr.message);
+      }
+    }
+
     if (doc.storageType === 'gdrive' && doc.fileUrl) {
       return res.redirect(doc.fileUrl);
     }
@@ -98,7 +113,34 @@ router.post('/upload', authenticateToken, upload.single('worldFile'), async (req
     const currentVer = latestVer ? latestVer.version : 100;
     const nextVer = currentVer + 1;
 
-    if (gdriveUrl && gdriveUrl.trim()) {
+    const googleAccount = await googleDriveService.getActiveGoogleAccount();
+
+    if (req.file && googleAccount) {
+      try {
+        const driveRes = await googleDriveService.uploadWorldToDrive(
+          nextVer,
+          req.file.buffer,
+          req.file.originalname,
+          notes,
+          googleAccount
+        );
+        fileInfo = {
+          fileName: driveRes.fileName,
+          fileSize: driveRes.fileSize,
+          fileUrl: driveRes.webViewLink,
+          storageType: 'gdrive',
+          gdriveFileId: driveRes.fileId
+        };
+      } catch (dErr) {
+        console.warn('[GDrive Upload Warning]', dErr.message);
+        fileInfo = await storageService.uploadWorldFile(
+          nextVer,
+          req.file.buffer,
+          req.file.originalname,
+          req.file.mimetype
+        );
+      }
+    } else if (gdriveUrl && gdriveUrl.trim()) {
       fileInfo = storageService.processGoogleDriveLink(nextVer, gdriveUrl.trim());
     } else if (req.file) {
       fileInfo = await storageService.uploadWorldFile(
@@ -112,7 +154,8 @@ router.post('/upload', authenticateToken, upload.single('worldFile'), async (req
         fileName: `world_v${nextVer}.zip`,
         fileSize: 0,
         fileUrl: storageService.GDRIVE_STORAGE_URL,
-        storageType: 'gdrive'
+        storageType: 'gdrive',
+        gdriveFileId: null
       };
     }
 

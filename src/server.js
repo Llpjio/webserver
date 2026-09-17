@@ -9,6 +9,7 @@ const { initWebSocketServer } = require('./services/websocket');
 const { startReaper } = require('./services/sessionManager');
 
 const authRouter = require('./routes/auth');
+const googleAuthRouter = require('./routes/googleAuth');
 const sessionRouter = require('./routes/session');
 const worldRouter = require('./routes/world');
 const playersRouter = require('./routes/players');
@@ -32,6 +33,7 @@ app.get('/healthz', (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth/google', googleAuthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/world', worldRouter);

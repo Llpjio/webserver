@@ -8,6 +8,7 @@ const STATE = {
   token: localStorage.getItem('e4all_jwt_token') || null,
   currentUser: null,
   currentStatus: null,
+  gdriveAccount: null,
   players: [],
   history: [],
   backups: [],
@@ -21,6 +22,16 @@ const STATE = {
 document.addEventListener('DOMContentLoaded', async () => {
   setupThemeDropdown();
   setupWebSocket();
+
+  // Check URL query parameters for Google Drive OAuth callback
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('gdrive') === 'connected') {
+    showToast('Google Drive connected successfully!', 'success');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (urlParams.get('gdrive') === 'error') {
+    showToast(`Google Drive connection notice: ${urlParams.get('msg') || 'Failed'}`, 'error');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 
   // Check current user if token exists
   if (STATE.token) {
@@ -253,7 +264,7 @@ function setupWebSocket() {
 
 // ================= DATA FETCHING =================
 async function refreshAll() {
-  await Promise.all([fetchPlayers(), fetchStatus(), fetchHistory(), fetchBackups()]);
+  await Promise.all([fetchPlayers(), fetchStatus(), fetchHistory(), fetchBackups(), fetchGDriveAccount()]);
 }
 
 async function fetchPlayers() {
@@ -301,6 +312,61 @@ async function fetchBackups() {
     renderBackups();
   } catch (err) {
     console.error('Error fetching backups:', err);
+  }
+}
+
+async function fetchGDriveAccount() {
+  try {
+    const res = await fetch('/api/auth/google/status');
+    const data = await res.json();
+    STATE.gdriveAccount = data.connected ? data : null;
+    renderGDriveAccountBox();
+  } catch (err) {
+    console.error('Error fetching Google Drive account status:', err);
+  }
+}
+
+function renderGDriveAccountBox() {
+  const container = document.getElementById('gdriveAccountContainer');
+  const toggle = document.getElementById('autoBackupToggle');
+  if (!container) return;
+
+  if (STATE.gdriveAccount && STATE.gdriveAccount.connected) {
+    const acc = STATE.gdriveAccount;
+    const usageGB = acc.storageQuota && acc.storageQuota.usage ? (acc.storageQuota.usage / (1024 ** 3)).toFixed(2) : '0.00';
+    const limitGB = acc.storageQuota && acc.storageQuota.limit ? (acc.storageQuota.limit / (1024 ** 3)).toFixed(2) : '15.00';
+
+    if (toggle) {
+      toggle.checked = !!acc.autoBackupsEnabled;
+    }
+
+    container.innerHTML = `
+      <div class="aternos-account-chip">
+        <div class="aternos-account-info">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" class="aternos-gdrive-logo" alt="GDrive" />
+          <span class="aternos-account-email" title="${escapeHtml(acc.email)}">${escapeHtml(acc.email)}</span>
+          <span class="aternos-quota-pill">${usageGB} GB / ${limitGB} GB</span>
+        </div>
+        <div class="aternos-account-actions">
+          <a href="/api/auth/google" class="btn btn-secondary btn-sm" title="Switch or Re-authenticate Account" style="padding: 2px 6px; font-size: 0.85rem;">
+            🔄
+          </a>
+          <button class="btn btn-danger btn-sm" onclick="handleDisconnectGDrive()" title="Disconnect Google Drive" style="padding: 2px 6px; font-size: 0.85rem;">
+            ✕
+          </button>
+        </div>
+      </div>
+    `;
+  } else {
+    container.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <span style="font-size: 0.9rem; color: #9ca3af;">No Google Drive linked</span>
+        <a href="/api/auth/google" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" style="width: 16px; height: 16px;" alt="GDrive" />
+          Connect Google Drive
+        </a>
+      </div>
+    `;
   }
 }
 
@@ -812,6 +878,102 @@ function renderBackups() {
 }
 
 // ================= BACKUP MODALS & HANDLERS =================
+async function handleInlineCreateBackup() {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+
+  const input = document.getElementById('inlineBackupTitleInput');
+  const btn = document.getElementById('inlineCreateBackupBtn');
+  const title = input ? input.value.trim() : '';
+
+  if (!title) {
+    showToast('Please enter a backup snapshot name.', 'error');
+    if (input) input.focus();
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" /> Creating Backup...`;
+  }
+
+  const formData = new FormData();
+  formData.append('title', title);
+  formData.append('notes', 'Manual backup snapshot created via Aternos hub');
+
+  try {
+    const res = await fetch('/api/backups/create', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${STATE.token}` },
+      body: formData
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to create backup', 'error');
+      return;
+    }
+
+    showToast(`Backup "${title}" created successfully!`, 'success');
+    if (input) input.value = '';
+    fetchBackups();
+    fetchHistory();
+    fetchStatus();
+    fetchGDriveAccount();
+  } catch (err) {
+    showToast('Connection error creating backup', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" /> ☁️ Create Backup`;
+    }
+  }
+}
+
+async function handleDisconnectGDrive() {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+  if (!confirm('Disconnect your Google Drive account?')) return;
+
+  try {
+    const res = await fetch('/api/auth/google/disconnect', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${STATE.token}` }
+    });
+    if (res.ok) {
+      STATE.gdriveAccount = null;
+      renderGDriveAccountBox();
+      showToast('Google Drive disconnected.', 'info');
+    }
+  } catch (err) {
+    showToast('Failed to disconnect Google Drive', 'error');
+  }
+}
+
+async function handleToggleAutoBackups() {
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/google/toggle-auto-backups', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${STATE.token}` }
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Automatic backups ${data.autoBackupsEnabled ? 'enabled' : 'disabled'}.`, 'info');
+    }
+  } catch (err) {
+    console.error('Error toggling auto backups:', err);
+  }
+}
+
 function openCreateBackupModal() {
   if (!STATE.token) {
     openLoginModal();

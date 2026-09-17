@@ -1030,3 +1030,165 @@ body.theme-classic .mc-animated-canvas {
   font-size: 1.1rem;
   color: #aaaaaa;
 }
+
+/* ================= ATERNOS BACKUP SERVICES STYLING ================= */
+.aternos-backup-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+@media (max-width: 768px) {
+  .aternos-backup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.aternos-service-box {
+  background: rgba(18, 14, 28, 0.7);
+  border: 2px solid #2d263e;
+  padding: 1.1rem 1.25rem;
+  border-radius: 4px;
+}
+
+.aternos-box-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-pixel);
+  font-size: 1.15rem;
+  color: #ffffff;
+  margin-bottom: 0.75rem;
+}
+
+.aternos-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #374151;
+  color: #d1d5db;
+  font-size: 0.75rem;
+  font-family: sans-serif;
+  cursor: help;
+}
+
+.aternos-desc-text {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Account Chip */
+.aternos-account-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 20px;
+  padding: 0.4rem 0.85rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.aternos-account-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.aternos-gdrive-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.aternos-account-email {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f3f4f6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
+.aternos-quota-pill {
+  font-size: 0.8rem;
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.2);
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.aternos-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Switch Toggle */
+.switch-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider-toggle {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #4b5563;
+  transition: 0.3s;
+  border-radius: 24px;
+}
+
+.slider-toggle:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider-toggle {
+  background-color: #10b981;
+}
+
+input:checked + .slider-toggle:before {
+  transform: translateX(20px);
+}
+
+/* Inline Create Backup Bar */
+.aternos-create-backup-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.15rem;
+  margin-bottom: 1.25rem;
+  background: rgba(18, 14, 28, 0.85);
+  border: 2px solid #2d263e;
+}
+

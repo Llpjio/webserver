@@ -108,7 +108,7 @@
             <div>
               <h2 class="card-title mc-pixel-font">World Backups (Aternos Cloud)</h2>
               <span style="font-size: 0.8rem; color: #93c5fd; display: block; margin-top: 2px;">
-                📁 Google Drive 5TB Storage Connected · Restore any milestone save anytime
+                ☁️ Automated Google Drive Cloud Backup System
               </span>
             </div>
           </div>
@@ -116,13 +116,57 @@
             <a href="https://drive.google.com/drive/folders/1SStfXqC6bhod_kHJ4bOnQ0Yx6UtrJ7H0?usp=sharing" target="_blank" class="btn btn-secondary btn-sm" style="border-color: #3b82f6;" title="Open linked Google Drive folder">
               📂 Open GDrive Folder ↗
             </a>
-            <button class="btn btn-primary btn-sm" onclick="openCreateBackupModal()">
-              ➕ Create Backup
-            </button>
             <button class="btn btn-secondary btn-sm" onclick="fetchBackups()">
               🔄 Refresh
             </button>
           </div>
+        </div>
+
+        <!-- Aternos Backup Services Grid -->
+        <div class="aternos-backup-grid">
+          <!-- Backup Services Box -->
+          <div class="aternos-service-box mc-inset-box">
+            <div class="aternos-box-title">
+              <span>☁️ Backup services</span>
+              <span class="aternos-help-icon" title="Connected Google Drive account used for storing world zip snapshots">?</span>
+            </div>
+            <div id="gdriveAccountContainer" class="aternos-account-container">
+              <!-- Rendered by JS -->
+              <div style="color: #888; font-size: 0.9rem;">Checking Google Drive connection...</div>
+            </div>
+          </div>
+
+          <!-- Automatic Backups Box -->
+          <div class="aternos-service-box mc-inset-box">
+            <div class="aternos-box-title" style="justify-content: space-between;">
+              <span>🤖 Automatic Backups</span>
+              <label class="switch-toggle">
+                <input type="checkbox" id="autoBackupToggle" onchange="handleToggleAutoBackups()" checked />
+                <span class="slider-toggle"></span>
+              </label>
+            </div>
+            <p class="aternos-desc-text">
+              Create backups automatically in Google Drive when finishing hosting sessions.
+            </p>
+          </div>
+        </div>
+
+        <!-- Inline Create Backup Bar -->
+        <div class="aternos-create-backup-bar mc-inset-box">
+          <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px;">
+            <span style="font-size: 1.1rem;">📦</span>
+            <input 
+              type="text" 
+              id="inlineBackupTitleInput" 
+              class="input-field" 
+              placeholder="Backup snapshot name (e.g. Pre-Dragon fight, Base Expansion)..."
+              style="margin: 0; flex: 1;"
+            />
+          </div>
+          <button class="btn btn-primary" onclick="handleInlineCreateBackup()" id="inlineCreateBackupBtn" style="white-space: nowrap;">
+            <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Save" />
+            ☁️ Create Backup
+          </button>
         </div>
 
         <div id="backupsList" class="backups-list-container">

@@ -57,17 +57,45 @@ const worldVersionSchema = new mongoose.Schema({
   fileName: { type: String, default: null },
   fileSize: { type: Number, default: 0 },
   storageType: { type: String, enum: ['gdrive', 'r2', 'local', 'none'], default: 'none' },
+  gdriveFileId: { type: String, default: null },
+  gdriveFolderId: { type: String, default: null },
   isLocked: { type: Boolean, default: false },
   isAuthoritative: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
+// Google OAuth Account Schema (for automatic Aternos-style backups)
+const googleAccountSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  name: { type: String, default: '' },
+  picture: { type: String, default: '' },
+  tokens: {
+    access_token: { type: String },
+    refresh_token: { type: String },
+    scope: { type: String },
+    token_type: { type: String },
+    expiry_date: { type: Number }
+  },
+  folderId: { type: String, default: null },
+  folderName: { type: String, default: 'E4ALL Backups' },
+  storageQuota: {
+    usage: { type: Number, default: 0 },
+    limit: { type: Number, default: 0 }
+  },
+  connectedByUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  autoBackupsEnabled: { type: Boolean, default: true },
+  lastSyncedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', userSchema);
 const Session = mongoose.model('Session', sessionSchema);
 const WorldVersion = mongoose.model('WorldVersion', worldVersionSchema);
+const GoogleAccount = mongoose.model('GoogleAccount', googleAccountSchema);
 
 module.exports = {
   User,
   Session,
-  WorldVersion
+  WorldVersion,
+  GoogleAccount
 };
