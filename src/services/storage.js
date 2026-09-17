@@ -1,0 +1,122 @@
+const path = require('path');
+const fs = require('fs');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+let s3Client = null;
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'e4all-worlds';
+const R2_PUBLIC_DOMAIN = process.env.R2_PUBLIC_DOMAIN; // e.g. https://pub-xxx.r2.dev
+
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+function isR2Configured() {
+  return !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+}
+
+if (isR2Configured()) {
+  s3Client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY
+    }
+  });
+  console.log(`[Storage] Cloudflare R2 initialized with bucket: ${R2_BUCKET_NAME}`);
+} else {
+  console.log(`[Storage] Cloudflare R2 credentials not provided in .env. Using local storage at ${uploadsDir}`);
+}
+
+/**
+ * Upload a world archive (to R2 if configured, otherwise locally)
+ */
+async function uploadWorldFile(version, fileBuffer, originalName, mimeType) {
+  const fileName = `world_v${version}.zip`;
+  const fileSize = fileBuffer.length;
+
+  if (isR2Configured() && s3Client) {
+    const key = `worlds/${fileName}`;
+    const command = new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      Body: fileBuffer,
+      ContentType: mimeType || 'application/zip'
+    });
+
+    await s3Client.send(command);
+    console.log(`[Storage] Uploaded ${fileName} (${fileSize} bytes) to Cloudflare R2.`);
+
+    const fileUrl = R2_PUBLIC_DOMAIN 
+      ? `${R2_PUBLIC_DOMAIN.replace(/\/$/, '')}/${key}`
+      : `r2://${R2_BUCKET_NAME}/${key}`;
+
+    return {
+      fileName,
+      fileSize,
+      fileUrl,
+      storageType: 'r2'
+    };
+  } else {
+    // Local storage fallback
+    const destPath = path.join(uploadsDir, fileName);
+    fs.writeFileSync(destPath, fileBuffer);
+    console.log(`[Storage] Saved ${fileName} (${fileSize} bytes) to local storage.`);
+
+    return {
+      fileName,
+      fileSize,
+      fileUrl: `/api/world/download/${version}`,
+      storageType: 'local'
+    };
+  }
+}
+
+/**
+ * Get direct / pre-signed download link for a world version
+ */
+async function getDownloadUrl(version, worldDoc) {
+  if (!worldDoc) return null;
+
+  if (worldDoc.storageType === 'r2' && isR2Configured() && s3Client) {
+    if (R2_PUBLIC_DOMAIN) {
+      return `${R2_PUBLIC_DOMAIN.replace(/\/$/, '')}/worlds/${worldDoc.fileName || `world_v${version}.zip`}`;
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `worlds/${worldDoc.fileName || `world_v${version}.zip`}`
+    });
+
+    // Generate pre-signed URL valid for 2 hours
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 7200 });
+    return presignedUrl;
+  }
+
+  // Fallback to local / direct endpoint
+  return `/api/world/download/${version}`;
+}
+
+/**
+ * Get local file path for streaming download if stored locally
+ */
+function getLocalFilePath(version, fileName) {
+  const target = fileName || `world_v${version}.zip`;
+  const filePath = path.join(uploadsDir, target);
+  if (fs.existsSync(filePath)) {
+    return filePath;
+  }
+  return null;
+}
+
+module.exports = {
+  isR2Configured,
+  uploadWorldFile,
+  getDownloadUrl,
+  getLocalFilePath
+};

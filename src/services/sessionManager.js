@@ -224,7 +224,7 @@ async function beginEndSession(user) {
 /**
  * Host confirms Minecraft closed, increments world version -> OFFLINE
  */
-async function finalizeSession(user, notes = '') {
+async function finalizeSession(user, notes = '', fileInfo = null) {
   const session = await validateActiveHost(user);
   const now = new Date();
 
@@ -243,6 +243,10 @@ async function finalizeSession(user, notes = '') {
     createdByUsername: user.displayName || user.username,
     sessionId: session.sessionId,
     notes: cleanNotes,
+    fileUrl: fileInfo ? fileInfo.fileUrl : null,
+    fileName: fileInfo ? fileInfo.fileName : null,
+    fileSize: fileInfo ? fileInfo.fileSize : 0,
+    storageType: fileInfo ? fileInfo.storageType : 'none',
     createdAt: now
   });
   await newVerDoc.save();
@@ -255,11 +259,12 @@ async function finalizeSession(user, notes = '') {
 
   const status = await getStatus();
   broadcast('SESSION_STATE_CHANGED', status);
-  broadcast('WORLD_VERSION_UPDATED', { version: nextVer, notes: cleanNotes });
+  broadcast('WORLD_VERSION_UPDATED', { version: nextVer, notes: cleanNotes, fileInfo });
 
   return {
     success: true,
     newWorldVersion: nextVer,
+    fileInfo,
     status
   };
 }

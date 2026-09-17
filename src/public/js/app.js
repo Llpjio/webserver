@@ -449,14 +449,26 @@ function renderClaimedState(session, isHost, user) {
     return `
       <div class="hero-state-box">
         <div class="host-badge-banner">👑 You have claimed the Host Lease</div>
-        <h2 class="hero-title mc-pixel-font">Step 1: Check Local World Copy</h2>
+        <h2 class="hero-title mc-pixel-font">Step 1: Download & Verify World</h2>
         <p class="hero-desc">
-          Current authoritative world version: <strong class="mc-pixel-font" style="color: var(--mc-green); font-size: 1.2rem;">v${session.worldVersionStart}</strong>. Ensure your local Minecraft save matches this version before launching.
+          Authoritative world version: <strong class="mc-pixel-font" style="color: var(--mc-green); font-size: 1.3rem;">v${session.worldVersionStart}</strong>. Download the latest save and place it in your <code>.minecraft/saves/E4ALL</code> folder before launching.
         </p>
+
+        <!-- World Download Card for Host -->
+        <div class="e4mc-card" style="border-color: #3b82f6;">
+          <div class="e4mc-header">Authoritative World Archive (v${session.worldVersionStart})</div>
+          <div class="btn-actions-row" style="margin-top: 0.5rem;">
+            <a href="/api/world/download/${session.worldVersionStart}" class="btn btn-primary" download>
+              <img src="/assets/textures/diamond_pickaxe.png" class="mc-tiny-icon" alt="Download" />
+              📥 Download World Save (v${session.worldVersionStart}.zip)
+            </a>
+          </div>
+        </div>
+
         <div class="btn-actions-row">
           <button class="btn btn-success" onclick="handleReadyToLaunch()">
             <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Ready" />
-            Local World Valid — Ready to Launch
+            ✅ World Ready — Launch Minecraft
           </button>
           <button class="btn btn-secondary" onclick="handleCancelSession()">
             Cancel Lease
@@ -470,7 +482,7 @@ function renderClaimedState(session, isHost, user) {
         <div class="host-badge-banner">👑 Host Claimed</div>
         <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is preparing to host</h2>
         <p class="hero-desc">
-          Verifying local world baseline (v${session.worldVersionStart}). The session address will appear once Minecraft is opened to LAN.
+          Host is syncing local world baseline (v${session.worldVersionStart}). The session address will appear once Minecraft is opened to LAN.
         </p>
       </div>
     `;
@@ -567,31 +579,46 @@ function renderOnlineState(session, isHost, user) {
 }
 
 function renderSavingState(session, isHost, user) {
+  const nextVer = (session.worldVersionStart || 100) + 1;
+
   if (isHost) {
     return `
       <div class="hero-state-box">
         <div class="host-badge-banner">🛑 Session Ending</div>
-        <h2 class="hero-title mc-pixel-font" style="color: var(--mc-purple);">Step 3: Clean Save & Version Bump</h2>
+        <h2 class="hero-title mc-pixel-font" style="color: var(--mc-purple);">Step 3: Save World & Upload (v${nextVer})</h2>
         <p class="hero-desc">
-          Please close Minecraft completely so world chunks and player data flush cleanly to disk.
+          Please close Minecraft cleanly. Then zip your world save folder (<code>.minecraft/saves/E4ALL</code>) and upload it to publish <strong>v${nextVer}</strong>.
         </p>
 
-        <div class="input-group">
-          <label class="input-label" for="sessionNotesInput">Session Notes / Changes (Optional):</label>
-          <input 
-            type="text" 
-            id="sessionNotesInput" 
-            class="input-field" 
-            placeholder="e.g. Explored woodland mansion, built nether portal..."
-          />
-        </div>
+        <!-- World Upload Form -->
+        <form id="worldUploadForm" onsubmit="handleFinalizeUploadSubmit(event)" style="max-width: 600px; margin: 1.25rem auto;">
+          <div class="form-group mc-inset-box" style="text-align: left;">
+            <label class="form-label mc-pixel-font" for="worldZipFile">
+              📂 Select World Save Archive (.zip):
+            </label>
+            <input type="file" id="worldZipFile" class="form-input" accept=".zip" />
+            <small style="color: #aaaaaa; margin-top: 4px; display: block;">
+              (Optional: Leave empty if no file changes were made to publish version bump only)
+            </small>
+          </div>
 
-        <div class="btn-actions-row">
-          <button class="btn btn-primary" onclick="handleFinalizeSession()">
-            <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" />
-            Minecraft Stopped — Publish World v${(session.worldVersionStart || 100) + 1}
-          </button>
-        </div>
+          <div class="input-group">
+            <label class="input-label" for="sessionNotesInput">Session Notes / Changes:</label>
+            <input 
+              type="text" 
+              id="sessionNotesInput" 
+              class="input-field" 
+              placeholder="e.g. Explored woodland mansion, built nether portal..."
+            />
+          </div>
+
+          <div class="btn-actions-row">
+            <button type="submit" class="btn btn-primary" id="uploadPublishBtn">
+              <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" />
+              📤 Upload & Publish World v${nextVer}
+            </button>
+          </div>
+        </form>
       </div>
     `;
   } else {
@@ -600,7 +627,7 @@ function renderSavingState(session, isHost, user) {
         <div class="host-badge-banner">🛑 Wrapping Up</div>
         <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is ending the session</h2>
         <p class="hero-desc">
-          Saving world state and preparing authoritative version increment. World will be available for next host momentarily.
+          Uploading new world version to cloud storage and finalizing state. World will be available for next host momentarily.
         </p>
       </div>
     `;
@@ -838,6 +865,62 @@ async function handleFinalizeSession() {
     fetchHistory();
   } catch (err) {
     showToast('Connection error', 'error');
+  }
+}
+
+async function handleFinalizeUploadSubmit(event) {
+  if (event) event.preventDefault();
+  if (!STATE.token) {
+    openLoginModal();
+    return;
+  }
+
+  const fileInput = document.getElementById('worldZipFile');
+  const notesInput = document.getElementById('sessionNotesInput');
+  const btn = document.getElementById('uploadPublishBtn');
+
+  const notes = notesInput ? notesInput.value.trim() : '';
+  const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+  const formData = new FormData();
+  formData.append('notes', notes);
+  if (file) {
+    formData.append('worldFile', file);
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" /> Uploading & Publishing...`;
+  }
+
+  try {
+    const res = await fetch('/api/world/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${STATE.token}`
+      },
+      body: formData
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to upload and finalize session', 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" /> 📤 Retry Upload & Publish`;
+      }
+      return;
+    }
+
+    showToast(`World published as v${data.newWorldVersion}! Status returned to OFFLINE.`, 'success');
+    fetchStatus();
+    fetchHistory();
+  } catch (err) {
+    showToast('Connection error during upload', 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" /> 📤 Retry Upload & Publish`;
+    }
   }
 }
 

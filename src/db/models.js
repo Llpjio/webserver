@@ -52,6 +52,10 @@ const worldVersionSchema = new mongoose.Schema({
   createdByUsername: { type: String, default: 'System' },
   sessionId: { type: String, default: null },
   notes: { type: String, default: '' },
+  fileUrl: { type: String, default: null },
+  fileName: { type: String, default: null },
+  fileSize: { type: Number, default: 0 },
+  storageType: { type: String, enum: ['r2', 'local', 'none'], default: 'none' },
   createdAt: { type: Date, default: Date.now }
 });
 
