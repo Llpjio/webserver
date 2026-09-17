@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const { User, WorldVersion } = require('./models');
 
 let isConnected = false;
+let connectionType = 'disconnected';
+
+function getConnectionType() {
+  return connectionType;
+}
 
 async function init() {
   if (isConnected) return;
@@ -11,19 +16,22 @@ async function init() {
   if (mongoUri) {
     console.log('[DB] Connecting to MongoDB from environment variable...');
     await mongoose.connect(mongoUri);
+    connectionType = 'mongodb-cloud';
     console.log('[DB] Connected to MongoDB database.');
   } else {
     // Attempt local mongodb first; if unavailable, start in-memory Mongo server
     try {
       console.log('[DB] Attempting local MongoDB connection at mongodb://localhost:27017/e4all ...');
       await mongoose.connect('mongodb://localhost:27017/e4all', { serverSelectionTimeoutMS: 2000 });
+      connectionType = 'local-mongodb';
       console.log('[DB] Connected to local MongoDB instance.');
     } catch (err) {
-      console.log('[DB] Local MongoDB not detected. Initializing embedded MongoMemoryServer for zero-config run...');
+      console.log('[DB] [WARNING] MONGODB_URI not set and local MongoDB not detected. Initializing embedded MongoMemoryServer (RAM fallback)...');
       const { MongoMemoryServer } = require('mongodb-memory-server');
       const mongod = await MongoMemoryServer.create();
       const uri = mongod.getUri();
       await mongoose.connect(uri);
+      connectionType = 'in-memory-fallback';
       console.log(`[DB] Embedded MongoDB running at ${uri}`);
     }
   }
@@ -66,5 +74,6 @@ async function init() {
 
 module.exports = {
   init,
+  getConnectionType,
   models: require('./models')
 };

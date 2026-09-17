@@ -21,9 +21,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Health check for Render
+// Health check for Render & status monitoring
 app.get('/healthz', (req, res) => {
-  res.status(200).json({ status: 'ok', time: new Date().toISOString() });
+  res.status(200).json({ 
+    status: 'ok', 
+    database: db.getConnectionType(),
+    time: new Date().toISOString() 
+  });
 });
 
 // API Routes
