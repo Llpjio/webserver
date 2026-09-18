@@ -531,16 +531,31 @@ function renderClaimedState(session, isHost, user) {
         <div class="host-badge-banner">👑 You have claimed the Host Lease</div>
         <h2 class="hero-title mc-pixel-font">Step 1: Download & Verify World</h2>
         <p class="hero-desc">
-          Authoritative world version: <strong class="mc-pixel-font" style="color: var(--mc-green); font-size: 1.3rem;">v${session.worldVersionStart}</strong>. Download the latest save and place it in your <code>.minecraft/saves/E4ALL</code> folder before launching.
+          Authoritative world version: <strong class="mc-pixel-font" style="color: var(--mc-green); font-size: 1.3rem;">v${session.worldVersionStart}</strong>. Sync your local <code>.minecraft/saves/E4ALL</code> folder before launching.
         </p>
 
-        <!-- World Download Card for Host -->
-        <div class="e4mc-card" style="border-color: #3b82f6;">
-          <div class="e4mc-header">Authoritative World Archive (v${session.worldVersionStart})</div>
+        <!-- Fast Delta Sync / Download Card -->
+        <div class="e4mc-card" style="border-color: #10b981; background: rgba(16, 185, 129, 0.08); text-align: left; padding: 1rem 1.25rem;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="font-family: var(--font-pixel); color: var(--mc-green); font-size: 1.1rem;">
+              ⚡ Option A: Instant Delta Sync (Recommended)
+            </div>
+            <a href="/tools/e4all_sync.py" download="e4all_sync.py" class="btn btn-primary btn-sm">
+              📥 Get Sync Tool (.py)
+            </a>
+          </div>
+          <p style="color: #cbd5e1; font-size: 0.85rem; margin: 4px 0 0 0;">
+            Run <code>python e4all_sync.py --pull</code> to sync only changed chunk files (5–30 MB) with 100% SHA-256 verification.
+          </p>
+        </div>
+
+        <!-- Full Archive Option -->
+        <div class="e4mc-card" style="border-color: #3b82f6; margin-top: 0.75rem;">
+          <div class="e4mc-header">Option B: Full World Archive (v${session.worldVersionStart})</div>
           <div class="btn-actions-row" style="margin-top: 0.5rem; justify-content: center; gap: 10px; flex-wrap: wrap;">
             <a href="https://drive.google.com/drive/folders/1SStfXqC6bhod_kHJ4bOnQ0Yx6UtrJ7H0?usp=sharing" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
               <img src="/assets/textures/diamond_pickaxe.png" class="mc-tiny-icon" alt="Folder" />
-              📂 Open Google Drive World Saves ↗
+              📂 Open Google Drive Saves ↗
             </a>
             <a href="/api/world/download/${session.worldVersionStart}" class="btn btn-secondary" download>
               📥 Direct Download (v${session.worldVersionStart}.zip)
@@ -588,36 +603,38 @@ function renderStartingState(session, isHost, user) {
           </ol>
         </div>
 
-        <div class="input-group">
-          <label class="input-label" for="e4mcInput">Paste e4mc Public Address:</label>
-          <input 
-            type="text" 
-            id="e4mcInput" 
-            class="input-field mono" 
-            placeholder="e.g. abcde.e4mc.link" 
-            value="${session.e4mcAddress || ''}"
-            autofocus
-          />
-        </div>
-
-        <div class="btn-actions-row">
-          <button class="btn btn-success" onclick="handleGoOnline()">
-            <img src="/assets/textures/compass_16.png" class="mc-tiny-icon" alt="Compass" />
-            Start Session / Go Online
-          </button>
-          <button class="btn btn-secondary" onclick="handleCancelSession()">
-            Abort
-          </button>
-        </div>
+        <!-- Address input form -->
+        <form onsubmit="handlePublishAddressSubmit(event)" style="margin: 1.25rem auto 0 auto; max-width: 500px;">
+          <div class="input-group">
+            <label class="input-label" for="e4mcAddressInput">Paste e4mc LAN Public Address:</label>
+            <input 
+              type="text" 
+              id="e4mcAddressInput" 
+              class="input-field" 
+              placeholder="e.g. xxxxx.e4mc.link or 123.45.67.89:25565" 
+              value="${session.e4mcAddress || ''}"
+              required
+            />
+          </div>
+          <div class="btn-actions-row" style="margin-top: 1rem;">
+            <button type="submit" class="btn btn-success">
+              <img src="/assets/textures/redstone.png" class="mc-tiny-icon" alt="Signal" />
+              Broadcast Live Session
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="handleCancelSession()">
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
     `;
   } else {
     return `
       <div class="hero-state-box">
-        <div class="host-badge-banner">👑 Starting Up</div>
-        <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is starting Minecraft...</h2>
+        <div class="host-badge-banner">⏳ Launching Server</div>
+        <h2 class="hero-title mc-pixel-font">${escapeHtml(session.hostDisplayName)} is opening world to LAN...</h2>
         <p class="hero-desc">
-          World is launching and establishing e4mc tunnel. Address will appear here automatically in real time!
+          Minecraft singleplayer is starting. The join address will be broadcast here automatically.
         </p>
       </div>
     `;
@@ -625,23 +642,23 @@ function renderStartingState(session, isHost, user) {
 }
 
 function renderOnlineState(session, isHost, user) {
+  const address = session.e4mcAddress || 'Connecting...';
+
   return `
     <div class="hero-state-box">
-      <div class="host-badge-banner">
-        👑 Hosted by <strong style="color: #ffffff;">${escapeHtml(session.hostDisplayName)}</strong>
-      </div>
-      <h2 class="hero-title mc-pixel-font" style="color: var(--mc-green);">Minecraft World is ONLINE!</h2>
+      <div class="host-badge-banner live-pulse">🟢 SERVER ONLINE</div>
+      <h2 class="hero-title mc-pixel-font" style="color: var(--mc-green);">Minecraft World is Live!</h2>
       <p class="hero-desc">
-        Open Minecraft &rarr; <strong>Multiplayer</strong> &rarr; <strong>Direct Connection</strong> &rarr; Paste address below:
+        Hosted by <strong>${escapeHtml(session.hostDisplayName)}</strong>. Connect using the public e4mc link below:
       </p>
 
+      <!-- Connection Box -->
       <div class="e4mc-card">
-        <div class="e4mc-header">e4mc Connection Address</div>
-        <div class="e4mc-display-group">
-          <div class="e4mc-address-val" id="activeAddressText">${session.e4mcAddress || 'Connecting...'}</div>
-          <button class="btn btn-success btn-copy" onclick="copyAddress('${session.e4mcAddress}')">
-            <img src="/assets/textures/emerald.png" class="mc-tiny-icon" alt="Copy" />
-            Copy Address
+        <div class="e4mc-header">Minecraft Server Address (Direct Connect / Multiplayer)</div>
+        <div class="e4mc-address-row">
+          <span class="e4mc-address-text mc-pixel-font" id="e4mcDisplayAddress">${escapeHtml(address)}</span>
+          <button class="btn btn-primary btn-sm" onclick="copyAddress('${escapeHtml(address)}')">
+            📋 Copy Address
           </button>
         </div>
       </div>
@@ -670,26 +687,23 @@ function renderSavingState(session, isHost, user) {
         <div class="host-badge-banner">🛑 Session Ending</div>
         <h2 class="hero-title mc-pixel-font" style="color: var(--mc-purple);">Step 3: Save World & Publish (v${nextVer})</h2>
         <p class="hero-desc">
-          Close Minecraft cleanly. Zip your world save folder (<code>.minecraft/saves/E4ALL</code>) as <code>world_v${nextVer}.zip</code>.
+          Close Minecraft cleanly. Sync your changes to cloud storage to publish <strong>v${nextVer}</strong>.
         </p>
 
-        <!-- Google Drive Storage Destination Card -->
-        <div class="mc-inset-box" style="text-align: left; margin: 1.25rem auto; max-width: 650px; border: 2px solid rgba(59, 130, 246, 0.5); background: rgba(30, 58, 138, 0.15); padding: 1.25rem; border-radius: 8px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 8px;">
-            <span class="mc-pixel-font" style="color: #60a5fa; font-size: 1.1rem;">📁 5TB Google Drive Storage:</span>
-            <a href="https://drive.google.com/drive/folders/1SStfXqC6bhod_kHJ4bOnQ0Yx6UtrJ7H0?usp=sharing" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
-              📂 Open GDrive Folder ↗
+        <!-- Fast Delta Sync Method -->
+        <div class="mc-inset-box" style="text-align: left; margin: 1rem auto; max-width: 650px; border: 2px solid #10b981; background: rgba(16, 185, 129, 0.1); padding: 1.25rem; border-radius: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <span class="mc-pixel-font" style="color: var(--mc-green); font-size: 1.15rem;">⚡ Recommended: 1-Click Delta Sync (Laptop Processing)</span>
+            <a href="/tools/e4all_sync.py" download="e4all_sync.py" class="btn btn-primary btn-sm">
+              📥 Sync Script (.py)
             </a>
           </div>
-          <p style="color: #cbd5e1; font-size: 0.9rem; line-height: 1.4; margin: 0 0 0.5rem 0;">
-            1. Save your zipped world as <code>world_v${nextVer}.zip</code> into your Google Drive folder.
-          </p>
-          <p style="color: #93c5fd; font-size: 0.85rem; margin: 0;">
-            ✅ Your world storage is automatically synced with the server's master Google Drive archive.
+          <p style="color: #cbd5e1; font-size: 0.9rem; margin: 6px 0 0 0;">
+            Run <code>python e4all_sync.py --push "Your session notes"</code> on your PC. It will scan only modified chunks, upload the delta (5–30 MB), and finalize the session with 0% server load.
           </p>
         </div>
 
-        <!-- World Upload Form -->
+        <!-- Web Publish Form -->
         <form id="worldUploadForm" onsubmit="handleFinalizeUploadSubmit(event)" style="max-width: 650px; margin: 1rem auto 0 auto;">
           <div class="input-group">
             <label class="input-label" for="sessionNotesInput">Session Notes / Changes:</label>
@@ -704,7 +718,7 @@ function renderSavingState(session, isHost, user) {
           <div class="btn-actions-row" style="margin-top: 1rem;">
             <button type="submit" class="btn btn-primary" id="uploadPublishBtn">
               <img src="/assets/textures/oak_sign.png" class="mc-tiny-icon" alt="Publish" />
-              📤 Finish & Publish World v${nextVer}
+              📤 Publish & Close Session (v${nextVer})
             </button>
           </div>
         </form>

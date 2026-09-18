@@ -14,6 +14,7 @@ const sessionRouter = require('./routes/session');
 const worldRouter = require('./routes/world');
 const playersRouter = require('./routes/players');
 const backupsRouter = require('./routes/backups');
+const deltaRouter = require('./routes/delta');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +23,7 @@ const server = http.createServer(app);
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/tools', express.static(path.join(__dirname, '../tools')));
 
 // Health check for Render & status monitoring
 app.get('/healthz', (req, res) => {
@@ -39,6 +41,7 @@ app.use('/api/session', sessionRouter);
 app.use('/api/world', worldRouter);
 app.use('/api/players', playersRouter);
 app.use('/api/backups', backupsRouter);
+app.use('/api/delta', deltaRouter);
 
 // Fallback to SPA
 app.use((req, res) => {

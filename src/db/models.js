@@ -44,7 +44,7 @@ const sessionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// World Version & Backup History Schema (Aternos style)
+// World Version & Backup History Schema (Aternos style + Delta Sync)
 const worldVersionSchema = new mongoose.Schema({
   version: { type: Number, required: true, unique: true },
   parentVersion: { type: Number, default: null },
@@ -59,6 +59,13 @@ const worldVersionSchema = new mongoose.Schema({
   storageType: { type: String, enum: ['gdrive', 'r2', 'local', 'none'], default: 'none' },
   gdriveFileId: { type: String, default: null },
   gdriveFolderId: { type: String, default: null },
+  // Delta Sync fields
+  manifest: { type: Object, default: {} }, // { "region/r.0.0.mca": { sha256: "...", size: 1234 } }
+  deltaFileUrl: { type: String, default: null },
+  deltaFileName: { type: String, default: null },
+  deltaFileSize: { type: Number, default: 0 },
+  deltaChangedFilesCount: { type: Number, default: 0 },
+  totalFiles: { type: Number, default: 0 },
   isLocked: { type: Boolean, default: false },
   isAuthoritative: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }

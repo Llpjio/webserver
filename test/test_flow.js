@@ -14,6 +14,7 @@ const sessionRouter = require('../src/routes/session');
 const worldRouter = require('../src/routes/world');
 const playersRouter = require('../src/routes/players');
 const backupsRouter = require('../src/routes/backups');
+const deltaRouter = require('../src/routes/delta');
 
 async function makeRequest(server, path, method = 'GET', body = null, token = null) {
   const port = server.address().port;
@@ -62,6 +63,7 @@ async function runMongoDBTests() {
   app.use('/api/world', worldRouter);
   app.use('/api/players', playersRouter);
   app.use('/api/backups', backupsRouter);
+  app.use('/api/delta', deltaRouter);
 
   await db.init();
   await Session.deleteMany({}); // Clean sessions
@@ -193,7 +195,33 @@ async function runMongoDBTests() {
     assert.strictEqual(typeof gStatus.data.connected, 'boolean');
     console.log('  ✅ Google Drive status endpoint functioning OK');
 
-    console.log('\n🎉 ALL MONGODB, GDRIVE OAUTH, ATERNOS BACKUPS & AUTH TESTS PASSED!\n');
+    // 12. Delta Sync Manifest, Diff & Publish
+    console.log('▶ Test 12: Delta Manifest, Diff & Incremental Publish');
+    const sampleManifest = {
+      'level.dat': { sha256: 'a1b2c3d4e5f6', size: 2048, mtime: Date.now() },
+      'region/r.0.0.mca': { sha256: '112233445566', size: 1048576, mtime: Date.now() },
+      'region/r.0.1.mca': { sha256: '998877665544', size: 2097152, mtime: Date.now() }
+    };
+
+    const deltaPubRes = await makeRequest(server, '/api/delta/publish', 'POST', {
+      notes: 'Explored Nether fortress (delta sync test)',
+      manifestJson: sampleManifest,
+      deltaChangedFilesCount: 2,
+      totalFiles: 3
+    }, p2Token);
+
+    assert.strictEqual(deltaPubRes.status, 201);
+    const deltaVer = deltaPubRes.data.newVersion;
+    assert(deltaVer > 103);
+
+    // Diff test
+    const diffRes = await makeRequest(server, `/api/delta/diff?fromVersion=100&toVersion=${deltaVer}`, 'GET');
+    assert.strictEqual(diffRes.status, 200);
+    assert.strictEqual(diffRes.data.upToDate, false);
+    assert(diffRes.data.changedFiles.length > 0);
+    console.log(`  ✅ Delta sync published (v${deltaVer}) and computed diff (${diffRes.data.changedFiles.length} changed files)`);
+
+    console.log('\n🎉 ALL MONGODB, GDRIVE OAUTH, ATERNOS BACKUPS, DELTA SYNC & AUTH TESTS PASSED!\n');
     process.exit(0);
   } finally {
     server.close();
